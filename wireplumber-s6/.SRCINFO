@@ -1,0 +1,23 @@
+pkgbase = wireplumber-s6
+	pkgdesc = s6-rc user service definition for WirePlumber
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/artix-s6-user/artix-s6-user
+	arch = any
+	groups = s6-world
+	license = 0BSD
+	depends = wireplumber
+	depends = pipewire-s6
+	depends = s6-user
+	source = wireplumber-type
+	source = wireplumber-run
+	source = wireplumber-flag-recommended
+	source = wireplumber-dependency-pipewire
+	source = LICENSE
+	sha256sums = d0001a150b83f68f09004c5059045cb76a3f064eed4d42ce072bc3722c118006
+	sha256sums = 5adb4d61a5fd7ef7992ed92b048ac1933fe646415f6d64c09c53708a5bfd9326
+	sha256sums = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+	sha256sums = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+	sha256sums = e43689ed5dbd460be77c4f8ecc14a1285671194f11f711520a7be8d8d6d847f7
+
+pkgname = wireplumber-s6

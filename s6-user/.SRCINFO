@@ -1,0 +1,16 @@
+pkgbase = s6-user
+	pkgdesc = Per-user s6-frontend repository and XDG configuration wrapper
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/artix-s6-user/artix-s6-user
+	arch = any
+	license = 0BSD
+	depends = s6
+	depends = s6-rc
+	depends = s6-frontend
+	source = s6-user
+	source = LICENSE
+	sha256sums = 0b382b541f316c0a511c1d91e161a868dafdceebd6ada05db1cb389897c9097f
+	sha256sums = e43689ed5dbd460be77c4f8ecc14a1285671194f11f711520a7be8d8d6d847f7
+
+pkgname = s6-user

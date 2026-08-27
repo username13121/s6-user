@@ -1,0 +1,4 @@
+#!/bin/sh
+
+rundir=${PIPEWIRE_RUNTIME_DIR:-${XDG_RUNTIME_DIR:?}}
+[ -S "$rundir/pipewire-0" ]

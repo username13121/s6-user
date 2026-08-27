@@ -1,0 +1,168 @@
+#!/bin/sh
+
+# Turnstile backend for a per-user s6-svscan and s6-rc instance.
+
+case ${1-} in
+    run)
+        ;;
+
+    ready)
+        [ "${2-}" = booted ] || {
+            echo "s6: invalid readiness token '${2-}'" >&2
+            exit 69
+        }
+        exit 0
+        ;;
+
+    stop)
+        pid=${2-}
+        case $pid in
+            ''|*[!0-9]*) exit 69 ;;
+        esac
+        [ "$pid" -gt 1 ] 2>/dev/null || exit 69
+
+        uid=$(id -u) || exit 70
+        passwd=$(getent passwd "$uid") || exit 70
+        user=${passwd%%:*}
+        home=$(printf '%s\n' "$passwd" | awk -F: 'NR == 1 { print $6 }')
+        [ -n "$home" ] || home=/
+
+        HOME=$home
+        USER=$user
+        LOGNAME=$user
+        XDG_RUNTIME_DIR="/run/user/$uid"
+        XDG_CONFIG_HOME="$HOME/.config"
+        XDG_DATA_HOME="$HOME/.local/share"
+        XDG_STATE_HOME="$HOME/.local/state"
+        XDG_CACHE_HOME="$HOME/.cache"
+        export HOME USER LOGNAME
+        export XDG_RUNTIME_DIR XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME
+
+        # A failed transition is harmless during migration or partial startup.
+        if [ -e "$XDG_RUNTIME_DIR/s6-rc" ]; then
+            /usr/bin/s6-user live stop-everything -E -t 10000 \
+                >/dev/null 2>&1 || :
+        fi
+
+        # SIGTERM requests s6-svscan's graceful supervision-tree shutdown.
+        exec kill -TERM "$pid"
+        ;;
+
+    *)
+        exit 32
+        ;;
+esac
+
+TURNSTILE_READY=${2-}
+STATE=${3-}
+
+[ -p "$TURNSTILE_READY" ] || {
+    echo "s6: invalid Turnstile readiness fifo '$TURNSTILE_READY'" >&2
+    exit 69
+}
+
+[ -d "$STATE" ] || {
+    echo "s6: invalid Turnstile state directory '$STATE'" >&2
+    exit 69
+}
+
+[ -n "${HOME-}" ] && [ -d "$HOME" ] || {
+    echo "s6: invalid HOME '${HOME-}'" >&2
+    exit 70
+}
+
+# Match Turnstile's supplied backends: import the system profile first.
+[ -r /etc/profile ] && . /etc/profile
+
+set -eu
+
+uid=$(id -u)
+passwd=$(getent passwd "$uid")
+passwd_user=${passwd%%:*}
+
+: "${USER:=$passwd_user}"
+: "${LOGNAME:=$USER}"
+: "${XDG_RUNTIME_DIR:=/run/user/$uid}"
+: "${XDG_CONFIG_HOME:=$HOME/.config}"
+: "${XDG_DATA_HOME:=$HOME/.local/share}"
+: "${XDG_STATE_HOME:=$HOME/.local/state}"
+: "${XDG_CACHE_HOME:=$HOME/.cache}"
+
+case $XDG_RUNTIME_DIR in /*) ;; *) XDG_RUNTIME_DIR="/run/user/$uid" ;; esac
+case $XDG_CONFIG_HOME in /*) ;; *) XDG_CONFIG_HOME="$HOME/.config" ;; esac
+case $XDG_DATA_HOME in /*) ;; *) XDG_DATA_HOME="$HOME/.local/share" ;; esac
+case $XDG_STATE_HOME in /*) ;; *) XDG_STATE_HOME="$HOME/.local/state" ;; esac
+case $XDG_CACHE_HOME in /*) ;; *) XDG_CACHE_HOME="$HOME/.cache" ;; esac
+
+export HOME USER LOGNAME
+export XDG_RUNTIME_DIR XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME
+
+[ -d "$XDG_RUNTIME_DIR" ] || {
+    echo "s6: XDG runtime directory does not exist: '$XDG_RUNTIME_DIR'" >&2
+    exit 70
+}
+
+repo="$XDG_STATE_HOME/s6/repo"
+livedir="$XDG_RUNTIME_DIR/s6-rc"
+bootdb="$XDG_CONFIG_HOME/s6-rc/compiled/current"
+
+# A new repository inherits recommended/essential policy from the stores.
+# Synchronization preserves prescriptions for services already known to it.
+if [ ! -e "$repo" ]; then
+    /usr/bin/s6-user repository init
+else
+    /usr/bin/s6-user repository list >/dev/null
+    /usr/bin/s6-user repository sync
+fi
+
+if [ -e "$livedir" ] || [ -L "$livedir" ]; then
+    # Turnstile may be recovering a manager that died while sessions remained.
+    # Never replace the boot database underneath an existing live s6-rc state.
+    [ -e "$bootdb" ] || {
+        echo "s6: live state exists but the user boot database is missing" >&2
+        exit 70
+    }
+else
+    # No live state uses the boot database, so it is safe to replace it.
+    /usr/bin/s6-user set commit -f
+    /usr/bin/s6-user live install --init
+fi
+
+# Ask the frontend for scandir only. s6-frontend 0.1.0.0's exported bootdb
+# display is not authoritative and is deliberately ignored here.
+SCANDIR=$(
+    /usr/bin/s6-user version export |
+        sed -n 's/^scandir=//p'
+)
+
+case $SCANDIR in
+    /*) ;;
+    *)
+        echo "s6: unable to determine an absolute user scandir" >&2
+        exit 70
+        ;;
+esac
+
+mkdir -p "$SCANDIR"
+
+SVREADY="$STATE/svscan-ready"
+rm -f "$SVREADY"
+mkfifo "$SVREADY"
+
+# Only declare Turnstile readiness after shallow svscan readiness and a
+# successful dependency-aware s6-rc boot.
+exec 4>"$TURNSTILE_READY"
+(
+    if IFS= read -r _ <"$SVREADY"; then
+        if /usr/bin/s6-user system boot; then
+            printf 'booted\0' >&4
+        fi
+    fi
+    exec 4>&-
+) &
+
+# The helper alone keeps Turnstile's fifo open while s6-rc boots.
+exec 4>&-
+
+# Turnstile must track the service manager itself, not an intermediate shell.
+exec s6-svscan -d 3 "$SCANDIR" 3>"$SVREADY"

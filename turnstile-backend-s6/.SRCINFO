@@ -1,0 +1,15 @@
+pkgbase = turnstile-backend-s6
+	pkgdesc = Turnstile backend for per-user s6-svscan and s6-rc
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/artix-s6-user/artix-s6-user
+	arch = any
+	license = 0BSD
+	depends = turnstile
+	depends = s6-user
+	source = backend-s6
+	source = LICENSE
+	sha256sums = dae5467cf7c3817e2f17120867145b4f4687434af8b090b9710d24d7ff74c3d0
+	sha256sums = e43689ed5dbd460be77c4f8ecc14a1285671194f11f711520a7be8d8d6d847f7
+
+pkgname = turnstile-backend-s6

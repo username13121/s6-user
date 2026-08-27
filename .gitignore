@@ -1,0 +1,7 @@
+/packages/
+/.build/
+/.sources/
+**/pkg/
+**/src/
+*.pkg.tar.*
+*.pkg.tar.*.sig

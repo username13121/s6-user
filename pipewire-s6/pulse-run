@@ -1,0 +1,2 @@
+#!/bin/sh
+exec s6-notifyoncheck -n 0 -w 50 /usr/bin/pipewire-pulse

@@ -1,0 +1,84 @@
+#!/bin/sh
+
+# Run s6-frontend against this user's repository and service stores.
+
+set -eu
+
+fail()
+{
+    echo "s6-user: $*" >&2
+    exit 70
+}
+
+uid=$(id -u) || fail "unable to determine uid"
+
+if [ -z "${HOME-}" ] || [ ! -d "$HOME" ]; then
+    HOME=$(getent passwd "$uid" | awk -F: 'NR == 1 { print $6 }')
+fi
+
+case ${HOME-} in
+    /*) ;;
+    *) fail "HOME is not an absolute directory" ;;
+esac
+
+xdg_default()
+{
+    case $1 in
+        /*) printf '%s\n' "$1" ;;
+        *) printf '%s/%s\n' "$HOME" "$2" ;;
+    esac
+}
+
+XDG_CONFIG_HOME=$(xdg_default "${XDG_CONFIG_HOME-}" .config)
+XDG_DATA_HOME=$(xdg_default "${XDG_DATA_HOME-}" .local/share)
+XDG_STATE_HOME=$(xdg_default "${XDG_STATE_HOME-}" .local/state)
+XDG_CACHE_HOME=$(xdg_default "${XDG_CACHE_HOME-}" .cache)
+case ${XDG_RUNTIME_DIR-} in
+    /*) ;;
+    *) XDG_RUNTIME_DIR="/run/user/$uid" ;;
+esac
+
+# The store list is colon-separated and the frontend config is line-based.
+# Reject values that cannot be represented without changing their meaning.
+case "$XDG_CONFIG_HOME$XDG_STATE_HOME" in
+    *:*) fail "XDG_CONFIG_HOME and XDG_STATE_HOME must not contain ':'" ;;
+esac
+newline='
+'
+case "$XDG_CONFIG_HOME$XDG_STATE_HOME" in
+    *"$newline"*) fail "XDG paths must not contain newlines" ;;
+esac
+
+export HOME XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME XDG_RUNTIME_DIR
+
+config_dir="$XDG_CONFIG_HOME/s6"
+config="$config_dir/user.conf"
+repo="$XDG_STATE_HOME/s6/repo"
+bootdb="$XDG_CONFIG_HOME/s6-rc/compiled/current"
+user_store="$XDG_CONFIG_HOME/s6/user-sv"
+
+umask 077
+mkdir -p \
+    "$config_dir" \
+    "$user_store" \
+    "$XDG_STATE_HOME/s6" \
+    "$XDG_CONFIG_HOME/s6-rc/compiled"
+
+tmp=$(mktemp "$config.tmp.XXXXXX") || fail "unable to create frontend config"
+trap 'rm -f "$tmp"' 0 HUP INT TERM
+
+cat >"$tmp" <<EOF
+repodir = $repo
+bootdb = $bootdb
+storelist = /usr/share/s6/user-sv:/etc/s6/user-sv:$user_store
+verbosity = 1
+EOF
+
+if [ -r "$config" ] && cmp -s "$tmp" "$config"; then
+    rm -f "$tmp"
+else
+    mv -f "$tmp" "$config"
+fi
+trap - 0 HUP INT TERM
+
+S6_CONF="$config" exec s6 -u "$@"

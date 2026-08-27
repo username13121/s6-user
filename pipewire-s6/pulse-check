@@ -1,0 +1,3 @@
+#!/bin/sh
+
+[ -S "${XDG_RUNTIME_DIR:?}/pulse/native" ]

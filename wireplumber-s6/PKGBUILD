@@ -1,0 +1,29 @@
+pkgname=wireplumber-s6
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='s6-rc user service definition for WirePlumber'
+arch=('any')
+url='https://github.com/artix-s6-user/artix-s6-user'
+license=('0BSD')
+groups=('s6-world')
+depends=('wireplumber' 'pipewire-s6' 's6-user')
+source=('wireplumber-type'
+        'wireplumber-run'
+        'wireplumber-flag-recommended'
+        'wireplumber-dependency-pipewire'
+        'LICENSE')
+sha256sums=('d0001a150b83f68f09004c5059045cb76a3f064eed4d42ce072bc3722c118006'
+            '5adb4d61a5fd7ef7992ed92b048ac1933fe646415f6d64c09c53708a5bfd9326'
+            'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+            'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+            'e43689ed5dbd460be77c4f8ecc14a1285671194f11f711520a7be8d8d6d847f7')
+
+package() {
+    local dest="$pkgdir/usr/share/s6/user-sv/wireplumber"
+    install -Dm644 wireplumber-type "$dest/type"
+    install -Dm755 wireplumber-run "$dest/run"
+    install -Dm644 wireplumber-flag-recommended "$dest/flag-recommended"
+    install -Dm644 wireplumber-dependency-pipewire "$dest/dependencies.d/pipewire"
+
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

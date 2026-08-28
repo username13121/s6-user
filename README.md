@@ -32,7 +32,8 @@ remain `pipewire`, `pipewire-pulse`, and `wireplumber`.
 ## Install release packages without compiling
 
 Download all `.pkg.tar.zst` files and `SHA256SUMS` from this repository's
-official GitHub Release. Verify and install them:
+official [GitHub Releases page](https://github.com/username13121/s6-user/releases/latest).
+Verify and install them:
 
 ```sh
 sha256sum -c SHA256SUMS

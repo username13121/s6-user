@@ -15,7 +15,9 @@ The second set's `elogind-usersv-backend-s6-user` package depends on `s6-user`.
 ## Install GitHub Release packages
 
 For each repository, download its `.pkg.tar.zst` files and `SHA256SUMS` from
-the official GitHub Release, then run:
+the official [`s6-user`](https://github.com/username13121/s6-user/releases/latest)
+and [`elogind-usersv`](https://github.com/username13121/elogind-usersv/releases/latest)
+GitHub Releases, then run:
 
 ```sh
 sha256sum -c SHA256SUMS

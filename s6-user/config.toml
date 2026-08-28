@@ -1,0 +1,11 @@
+# Persistent path overrides for s6-user.
+#
+# Values must be absolute paths. Omitted values use the XDG-aware defaults
+# documented in s6-user(1). Runtime paths are deliberately not configurable;
+# s6 --user derives them from XDG_RUNTIME_DIR.
+#
+# repository_dir = "/home/example/.local/state/s6-rc/repository"
+# boot_database = "/home/example/.config/s6-rc/compiled/current"
+# package_store = "/usr/share/s6-rc/user/sources"
+# administrator_store = "/etc/s6-rc/user/sources"
+# user_store = "/home/example/.config/s6-rc/sources"

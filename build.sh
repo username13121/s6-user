@@ -12,26 +12,16 @@ if [[ $EUID -eq 0 ]]; then
     exit 1
 fi
 
-# packages/ is generated output. Recreate it so the pacman wildcard below can
-# never select stale releases from an earlier build.
+# packages/ is generated output. Recreate it so it contains only this build.
 rm -rf "$output"
 mkdir -p "$output" "$builddir" "$sourcedir"
 
 makepkg_args=(--cleanbuild --clean --force --nodeps)
-if [[ ${SIGN_PACKAGES:-0} == 1 ]]; then
-    makepkg_args+=(--sign)
-    if [[ -n ${GPGKEY:-} ]]; then
-        makepkg_args+=(--key "$GPGKEY")
-    fi
-fi
 
 for package_dir in \
-    turnstile \
     s6-user \
-    turnstile-s6 \
-    turnstile-backend-s6 \
-    pipewire-s6 \
-    wireplumber-s6
+    pipewire-s6-user \
+    wireplumber-s6-user
 do
     echo "==> Building $package_dir"
     mkdir -p "$sourcedir/$package_dir"
@@ -44,5 +34,8 @@ do
     )
 done
 
-echo "==> Packages are in $output"
-echo "==> Install with: sudo pacman -U $output/*.pkg.tar.zst"
+(
+    cd "$output"
+    sha256sum -- *.pkg.tar.zst >SHA256SUMS
+)
+echo "==> Packages and SHA256SUMS are in $output"

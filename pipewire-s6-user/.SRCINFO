@@ -1,10 +1,9 @@
-pkgbase = pipewire-s6
-	pkgdesc = s6-rc user service definitions for PipeWire
-	pkgver = 0.1.0
-	pkgrel = 2
+pkgbase = pipewire-s6-user
+	pkgdesc = s6-user service definitions for PipeWire
+	pkgver = 0.2.0
+	pkgrel = 1
 	url = https://github.com/username13121/s6-user.git
 	arch = any
-	groups = s6-world
 	license = 0BSD
 	source = pw-type
 	source = pw-run
@@ -35,12 +34,17 @@ pkgbase = pipewire-s6
 	sha256sums = ab40eef9625493db0c4a55cc4acd81ebd8f45f15c3e1ed66f60b046d0a993e87
 	sha256sums = e43689ed5dbd460be77c4f8ecc14a1285671194f11f711520a7be8d8d6d847f7
 
-pkgname = pipewire-s6
+pkgname = pipewire-s6-user
 	depends = pipewire
+	depends = s6
 	depends = s6-user
+	conflicts = pipewire-s6
+	replaces = pipewire-s6
 
-pkgname = pipewire-pulse-s6
-	pkgdesc = s6-rc user service definition for PipeWire PulseAudio compatibility
+pkgname = pipewire-pulse-s6-user
+	pkgdesc = s6-user service definition for PipeWire PulseAudio compatibility
 	depends = pipewire-pulse
-	depends = pipewire-s6
-	depends = s6-user
+	depends = pipewire-s6-user
+	depends = s6
+	conflicts = pipewire-pulse-s6
+	replaces = pipewire-pulse-s6

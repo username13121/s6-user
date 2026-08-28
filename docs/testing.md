@@ -1,146 +1,122 @@
 # Test checklist
 
-Run lifecycle tests on a non-production machine. Keep a root console available while changing PAM/session infrastructure.
+Use a non-production Artix machine and keep an independent root console open
+while testing PAM/session changes.
 
-## Package and configuration sanity
+## Automated checks
 
-- [ ] All packages build with `./build.sh`.
-- [ ] `pacman -Qlp packages/*.pkg.tar.zst` shows:
-  - `/usr/bin/turnstiled` and `/usr/lib/security/pam_turnstile.so`;
-  - `/etc/pam.d/turnstiled` with required `pam_elogind.so class=background type=unspecified`;
-  - `/usr/bin/s6-user`;
-  - `/usr/lib/turnstile/s6`;
-  - `/etc/s6/sv/turnstiled/{type,run,dependencies.d/elogind}` (not `/etc/s6/adminsv`);
-  - audio services only under `/usr/share/s6-rc/user/sources`.
-- [ ] `s6-user version export` reports the configured user `scandir`, `livedir`, `repodir`, `stmpdir`, and `storelist` paths, `verbosity=1`, and an empty `fdhuser`. (s6-frontend 0.1.0.0 misdisplays `bootdb`.)
-- [ ] Running `s6-user` creates no frontend configuration file and does not require `S6_CONF`.
-- [ ] A normal root/system `s6 version export` still reports `/etc/s6/repo` and the system stores.
-- [ ] `/run/user/$UID` is created by elogind before backend startup, not by these packages.
+In `s6-user-projects`:
+
+```sh
+cargo test --locked --manifest-path s6-user/Cargo.toml
+cargo clippy --locked --manifest-path s6-user/Cargo.toml --all-targets -- -D warnings
+./build.sh
+sha256sum -c packages/SHA256SUMS
+```
+
+In `elogind-usersv`:
+
+```sh
+make test
+make test-live
+./build.sh --clean
+sha256sum -c packages/SHA256SUMS
+```
+
+`make test-live` requires a running elogind/login1 system service.
+
+## Package contents
+
+- [ ] `s6-user` contains `/usr/bin/s6-user` and
+      `/etc/s6-user/config.toml`.
+- [ ] User service definitions exist only below
+      `/usr/share/s6-rc/user/sources/{pipewire,pipewire-pulse,wireplumber}`.
+- [ ] No per-user package belongs to `s6-world`.
+- [ ] No package contains Turnstile binaries, backends, or system services.
+- [ ] `elogind-usersv` contains daemon, supervisor, PAM module, PAM editor, and
+      required internal PAM profile.
+- [ ] `elogind-usersv-backend-s6-user` contains only the `s6-user` backend and
+      appropriate documentation/license files.
+- [ ] `elogind-usersv-s6` contains `/etc/s6/sv/elogind-usersvd` with an elogind
+      service dependency; it does not depend on a user backend package.
+
+## Path policy
+
+- [ ] `s6-user paths export` reports runtime `scandir`, `livedir`, and
+      `stmpdir` beneath `$XDG_RUNTIME_DIR`.
+- [ ] The repository, boot database, and stores use s6-user persistent policy,
+      not `/etc/s6/repo` or `/etc/s6/sv`.
+- [ ] System configuration is overridden field-by-field by per-user
+      configuration.
+- [ ] Relative paths, unknown TOML fields, line breaks, and `:` in store paths
+      are rejected.
+- [ ] Runtime path fields are rejected as unknown configuration.
+- [ ] s6-frontend's incorrect exported `bootdb` does not leak through
+      `s6-user paths export`.
+
+## Backend selection
+
+- [ ] Missing `backend` causes a clear configuration failure.
+- [ ] Invalid names containing uppercase characters, slashes, leading dots, or
+      traversal are rejected.
+- [ ] `backend = "s6-user"` resolves only to
+      `/usr/libexec/elogind-usersv/backends/s6-user`.
+- [ ] The daemon runs before PAM integration is enabled.
+
+## PAM integration
+
+- [ ] `elogind-usersv-pam enable` inserts exactly one required entry after the
+      common `pam_elogind.so` line in `/etc/pam.d/system-login`.
+- [ ] A second enable is a no-op.
+- [ ] `status` reports enabled.
+- [ ] `disable` removes only the managed line; a second disable is a no-op.
+- [ ] Ownership and mode of `system-login` are preserved.
+- [ ] Ambiguous or manually altered usersv entries fail closed.
+- [ ] Package removal cannot leave the required usersv line active.
 
 ## First login
 
-Start with no repository for a disposable test user (or a newly created user).
-
-- [ ] Log in once through SDDM, TTY, or SSH.
-- [ ] `/run/user/$UID` exists.
-- [ ] Exactly one user-owned `s6-svscan` starts.
-- [ ] `loginctl` shows the manager wrapper in a `Service=turnstiled`, `Class=background` session.
-- [ ] That session exports a nonempty `XDG_SESSION_ID` and the expected absolute runtime path.
-- [ ] PAM releases the login after shallow `s6-svscan` readiness; an intentionally slow boot service continues starting after the shell or desktop appears.
-- [ ] `$XDG_STATE_HOME/s6-rc/repository` is initialized automatically.
-- [ ] `$XDG_CONFIG_HOME/s6-rc/compiled/current` exists.
-- [ ] `s6-user live status` shows `pipewire`, `wireplumber`, and `pipewire-pulse` up when all three packages are installed and recommended.
-- [ ] `${PIPEWIRE_RUNTIME_DIR:-$XDG_RUNTIME_DIR}/pipewire-0` is a socket before dependents are considered up.
-- [ ] `$XDG_RUNTIME_DIR/pulse/native` is a socket before `pipewire-pulse` is considered up.
+- [ ] A real `Class=user` or `Class=user-early` login starts exactly one
+      user-owned `s6-svscan`.
+- [ ] login1 shows a separate `Service=elogind-usersv-manager`,
+      `Class=background` lease.
+- [ ] PAM returns after shallow `s6-svscan` readiness.
+- [ ] The repository and compiled database are initialized automatically.
+- [ ] PipeWire reaches socket readiness before dependents are marked up.
+- [ ] WirePlumber and PipeWire Pulse start through their `pipewire` dependency.
 
 ## Concurrent sessions
 
-Record the manager and PipeWire PIDs:
+- [ ] SDDM, TTY, and SSH sessions for one UID share one manager and one
+      PipeWire process.
+- [ ] Closing one session retains the manager while another eligible session
+      remains.
+- [ ] Final logout performs dependency-aware shutdown, exits `s6-svscan`, then
+      closes the background elogind lease.
+- [ ] elogind removes `$XDG_RUNTIME_DIR` only after the manager wrapper exits.
 
-```sh
-pgrep -u "$USER" -x s6-svscan
-pgrep -u "$USER" -x pipewire
-```
+## Supervision and restart
 
-- [ ] Open a second simultaneous session for the same user (include SSH in this test).
-- [ ] The same `s6-svscan` PID remains.
-- [ ] The same PipeWire PID remains; no duplicate PipeWire process appears.
-- [ ] Log out of one session.
-- [ ] The user manager and audio services remain while the other session is active.
-- [ ] Log out of the last session.
-- [ ] s6-rc stops user services dependency-aware and `s6-svscan` exits.
-- [ ] Turnstile removes its session file and closes the internal elogind background session.
-- [ ] `/run/user/$UID` remains present until the manager wrapper exits, then eventually disappears through elogind cleanup.
-- [ ] No desktop descendant retains an established connection to `/run/turnstiled/control.sock` after logout.
+- [ ] Killing WirePlumber causes s6 to restart it.
+- [ ] Killing `s6-svscan` causes elogind-usersv to restart the manager while a
+      login remains.
+- [ ] A boot transaction pending during manager death is terminated and does
+      not overlap the replacement manager.
+- [ ] No duplicate audio process remains after recovery.
 
-## Supervision
+## Policy persistence and overrides
 
-With a login still active:
-
-```sh
-kill "$(pgrep -n -u "$USER" -x wireplumber)"
-```
-
-- [ ] s6 restarts WirePlumber with a new PID.
-
-Kill the tracked user manager unexpectedly:
-
-```sh
-kill -KILL "$(pgrep -n -u "$USER" -x s6-svscan)"
-```
-
-- [ ] Turnstile starts a replacement `s6-svscan` while the login remains.
-- [ ] The user service graph becomes operational again.
-- [ ] No second persistent manager or duplicate PipeWire remains.
+- [ ] Disabled services remain disabled across logout/login, repository sync,
+      and package upgrade.
+- [ ] A newly discovered recommended service becomes active.
+- [ ] Administrator definitions override package definitions.
+- [ ] Individual definitions override administrator and package definitions.
+- [ ] Two logged-in users have independent repositories and runtime trees.
 
 ## Administrative termination
 
-From a separate root console while the disposable user is logged in:
-
-```sh
-loginctl terminate-user "$test_user"
-```
-
-- [ ] elogind sends catchable termination to all user sessions, including the Turnstile background session.
-- [ ] The Turnstile wrapper invokes the backend stop path and eventually exits.
-- [ ] `$XDG_RUNTIME_DIR` remains present while the background-session leader is alive.
-- [ ] The user manager and services disappear, followed by the runtime directory.
-- [ ] No test expects dependency-ordered shutdown after an explicit cgroup-wide `SIGTERM`, and no test treats `SIGKILL` as graceful.
-
-## Dependency graph
-
-With all audio services up:
-
-```sh
-s6-user stop pipewire
-```
-
-- [ ] `wireplumber` goes down.
-- [ ] `pipewire-pulse` goes down.
-- [ ] `pipewire` goes down.
-
-Then:
-
-```sh
-s6-user start wireplumber
-```
-
-- [ ] PipeWire starts first.
-- [ ] PipeWire reaches socket readiness.
-- [ ] WirePlumber starts after readiness.
-- [ ] `pipewire-pulse` stays down unless explicitly requested or restored by policy.
-
-## Persistent user policy
-
-```sh
-s6-user disable pipewire-pulse
-s6-user apply
-s6-user set status pipewire-pulse
-```
-
-- [ ] Log out of the last session and log back in; `pipewire-pulse` stays disabled.
-- [ ] Run `s6-user repository sync`, then `s6-user apply`; it stays disabled.
-- [ ] Rebuild/reinstall the same service package to simulate an update, synchronize/apply again, and verify it stays disabled.
-- [ ] A genuinely new service with `flag-recommended` is active when first discovered.
-
-## Overrides
-
-- [ ] Add a controlled override with the same service name under `/etc/s6-rc/user/sources`, synchronize, and verify it replaces `/usr/share/s6-rc/user/sources`.
-- [ ] Add an individual override under `$XDG_CONFIG_HOME/s6-rc/sources`, synchronize, and verify it replaces both global definitions.
-- [ ] Remove test overrides and synchronize/apply again.
-
-## Multiple users
-
-For two simultaneously logged-in users:
-
-- [ ] Both use definitions from `/usr/share/s6-rc/user/sources`.
-- [ ] Each has a distinct `$XDG_STATE_HOME/s6-rc/repository`.
-- [ ] Each has a distinct `$XDG_RUNTIME_DIR/service` and `$XDG_RUNTIME_DIR/s6-rc`.
-- [ ] Disabling `pipewire-pulse` for Alice does not change Bob's set.
-- [ ] Logging Alice out of her last session does not stop Bob's manager.
-
-## Desktop integration
-
-- [ ] No XDG desktop entry invokes `artix-pipewire-launcher` for the migrated user.
-- [ ] Starting a desktop does not change the s6-managed PipeWire/WirePlumber PIDs unexpectedly.
-- [ ] elogind login1, seat, inhibitor, suspend/power, and `/run/user/$UID` behavior still works normally.
+- [ ] `loginctl terminate-user USER` terminates sessions, manager, helper, and
+      lease without leaving runtime state.
+- [ ] Daemon shutdown waits for helpers and managers.
+- [ ] Forced cgroup-wide SIGTERM/SIGKILL is not treated as dependency-ordered
+      graceful shutdown.

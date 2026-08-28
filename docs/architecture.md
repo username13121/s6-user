@@ -4,134 +4,119 @@
 
 ### elogind
 
-elogind remains responsible for:
+elogind remains the authority for login sessions, seats, inhibitors, and
+`/run/user/$UID`. Neither s6-user nor its service packages create or retain the
+runtime directory.
 
-- login/session/seat tracking;
-- `/run/user/$UID` creation, ownership, and eventual removal;
-- the `org.freedesktop.login1` D-Bus API;
-- inhibitors and desktop power/session integration.
+### elogind-usersv
 
-### Turnstile
+elogind-usersv watches eligible elogind sessions, keeps one verified background
+elogind lease per managed UID, and starts/stops one selected backend. Its
+`s6-user` backend is a separate package in the elogind-usersv repository.
 
-Turnstile remains responsible for:
+### s6-user backend
 
-- first-login/last-logout accounting;
-- one manager instance shared by concurrent SDDM, TTY, and SSH sessions;
-- waiting for shallow manager readiness before PAM login continues;
-- restarting the manager if its tracked process exits while sessions remain.
+The backend prepares the user's offline repository through public `s6-user`
+commands, obtains resolved paths from `s6-user paths export`, and execs the
+actual `s6-svscan` manager. PAM readiness is shallow: login proceeds when
+`s6-svscan` enters its event loop while the s6-rc boot transaction continues.
 
-This setup uses the maintained project fork of Turnstile. Its login PAM socket is close-on-exec, so desktop descendants cannot retain stale Turnstile sessions. Its internal manager PAM transaction requires elogind and explicitly registers a `background` session. That pinning session is a lifetime lease on `$XDG_RUNTIME_DIR`: backend startup fails unless PAM supplies `XDG_SESSION_ID` and an absolute `XDG_RUNTIME_DIR`, and the lease is released only after the tracked manager exits.
+The backend is named `s6-user`, not `s6`. The latter remains available for a
+future implementation maintained by the s6 project.
 
-The backend follows Turnstile's existing `run`, `ready`, and `stop PID` protocol.
+### s6-user
 
-### s6 and s6-rc
+`s6-user` is a non-resident Rust wrapper around `/usr/bin/s6 --user`. It:
 
-The per-user `s6-svscan` process owns supervision. s6-rc owns the dependency graph, readiness transitions, oneshots, live state, and persistent enable/disable/mask prescriptions.
+1. normalizes HOME and XDG persistent bases;
+2. reads typed system and per-user TOML configuration;
+3. validates all configured persistent paths;
+4. creates the user-owned source store and repository/boot-database parents;
+5. supplies explicit `repodir`, `bootdb`, `storelist`, and empty fdholder user;
+6. replaces itself with `s6`.
 
-### s6-user and the backend adapter
-
-`s6-user` only applies the fixed per-user path policy before `exec`ing s6-frontend. The s6-specific Turnstile backend composes public `s6-user` commands for repository synchronization, live installation, boot, and shutdown, then directly `exec`s `s6-svscan` so Turnstile tracks the actual manager PID.
+It does not implement service supervision or session lifecycle.
 
 ## Filesystem policy
 
-| Path | Owner/purpose |
+| Path | Purpose |
 |---|---|
-| `/usr/share/s6-rc/user/sources/` | package-maintained user service source definitions |
-| `/etc/s6-rc/user/sources/` | machine administrator user-service overrides/additions |
-| `$XDG_CONFIG_HOME/s6-rc/sources/` | individual user definitions/overrides |
-| `$XDG_STATE_HOME/s6-rc/repository/` | individual repository and service-set prescriptions |
-| `$XDG_CONFIG_HOME/s6-rc/compiled/current` | individual compiled boot database |
-| `$XDG_RUNTIME_DIR/service/` | live user supervision scan directory |
-| `$XDG_RUNTIME_DIR/s6-rc/` | live s6-rc database/state |
-| `$XDG_RUNTIME_DIR/s6-frontend/` | s6-frontend temporary data |
+| `/usr/share/s6-rc/user/sources/` | package-maintained user service definitions |
+| `/etc/s6-rc/user/sources/` | administrator definitions and overrides |
+| `$XDG_CONFIG_HOME/s6-rc/sources/` | individual user definitions and overrides |
+| `$XDG_STATE_HOME/s6-rc/repository/` | individual repository and prescriptions |
+| `$XDG_CONFIG_HOME/s6-rc/compiled/current` | persistent compiled boot database |
+| `$XDG_RUNTIME_DIR/service/` | live supervision scan directory |
+| `$XDG_RUNTIME_DIR/s6-rc/` | live s6-rc state |
+| `$XDG_RUNTIME_DIR/s6-frontend/` | frontend temporary state |
 
-The configured store order is:
-
-```text
-/usr/share/s6-rc/user/sources:
-/etc/s6-rc/user/sources:
-$XDG_CONFIG_HOME/s6-rc/sources
-```
-
-s6-rc processes stores in order and a later definition replaces the same service name from an earlier store. Thus package definition < machine override < individual override. Package files never need to be copied into a home directory. The global source locations are distribution policy; the per-user locations retain their XDG base variables.
-
-The normal XDG fallbacks are:
+Store precedence is:
 
 ```text
-XDG_CONFIG_HOME=$HOME/.config
-XDG_DATA_HOME=$HOME/.local/share
-XDG_STATE_HOME=$HOME/.local/state
-XDG_CACHE_HOME=$HOME/.cache
-XDG_RUNTIME_DIR=/run/user/$UID
+package store < administrator store < individual user store
 ```
 
-`s6-user` creates user-owned persistent source, repository-parent, and compiled-database-parent directories as needed. It does not create `$XDG_RUNTIME_DIR`; the backend fails if that directory does not already exist.
+Later stores replace definitions with the same service name.
 
-## Why `s6-user` exists
+## Persistent configuration
 
-`s6-user` is a thin, stateless policy wrapper. It derives and validates the XDG bases, supplies every user policy value with a named global option, and then replaces itself with s6-frontend:
+Configuration is merged field-by-field:
 
-```sh
-exec s6 \
-    --user \
-    --verbosity=1 \
-    --scandir="$XDG_RUNTIME_DIR/service" \
-    --livedir="$XDG_RUNTIME_DIR/s6-rc" \
-    --repodir="$XDG_STATE_HOME/s6-rc/repository" \
-    --bootdb="$XDG_CONFIG_HOME/s6-rc/compiled/current" \
-    --stmpdir="$XDG_RUNTIME_DIR/s6-frontend" \
-    --storelist="/usr/share/s6-rc/user/sources:/etc/s6-rc/user/sources:$XDG_CONFIG_HOME/s6-rc/sources" \
-    --fdholder-user= \
-    ...
+```text
+built-in defaults
+  < /etc/s6-user/config.toml
+  < $XDG_CONFIG_HOME/s6-user/config.toml
 ```
 
-Explicit command-line options remain authoritative over both `/etc/s6-frontend.conf` and s6-frontend's built-in user defaults. Normal verbosity is fixed at 1. The empty fdholder-user value prevents a system-configured dedicated account from being embedded in a user database and leaves the internal fd-holder running as the `s6-svscan` user. The wrapper has no configuration file, custom lifecycle commands, resident process, or private state, and it does not use `S6_CONF`.
+Supported fields are:
 
-The Turnstile backend uses `s6-user` for every frontend/repository operation and reads the documented `s6-user version export` output for `scandir`, `livedir`, and `repodir`. It does not duplicate those paths or inspect repository internals. It deliberately does not consume the exported `bootdb`, because s6-frontend 0.1.0.0 displays that field incorrectly; the explicit boot path is still used by the underlying commands.
+```toml
+repository_dir = "/absolute/path/to/repository"
+boot_database = "/absolute/path/to/compiled/current"
+package_store = "/absolute/path/to/package/sources"
+administrator_store = "/absolute/path/to/admin/sources"
+user_store = "/absolute/path/to/user/sources"
+```
 
-## Startup transaction
+All configured paths must be absolute and valid UTF-8. Store paths may not
+contain `:` because s6-frontend uses a colon-separated store list. Unknown
+fields are rejected.
 
-On a new repository:
+Runtime paths are intentionally absent from this configuration. On the
+supported s6-frontend, `s6 --user` derives `scandir`, `livedir`, and `stmpdir`
+from `XDG_RUNTIME_DIR`. This prevents persistent policy changes from moving
+live state outside the elogind-owned runtime directory.
 
-1. `s6-user repository init` links all three stores and creates `current`.
-2. Recommended services enter the `active` prescription; essential services enter `always`; other services enter `usable`.
-3. `s6-user set commit -f` compiles the set.
-4. `s6-user live install --init` copies it to the explicit user boot database.
+`version export` in s6-frontend 0.1.0.0 misreports `bootdb`. The stable
+`s6-user paths export` command substitutes the configured boot path while
+retaining s6-frontend's resolved runtime paths.
 
-On an existing repository:
+## Repository startup
 
-1. `s6-user repository list` verifies that the repository is structurally usable.
-2. `s6-user repository sync` updates definitions.
-3. Existing service prescriptions are preserved. Newly discovered recommended services become active.
-4. If no live s6-rc state exists, the current set is force-committed and copied to the boot database.
+On first login the backend:
 
-If `$XDG_RUNTIME_DIR/s6-rc` already exists, Turnstile may be recovering a manager that died while sessions remained (or handling a quick relogin before runtime cleanup). The backend synchronizes the offline repository but does **not** replace the boot database underneath that live state. It reuses the existing boot database; the newly synchronized set is compiled on the next clean start or an explicit `s6-user apply`.
+1. initializes the repository and links configured stores;
+2. commits the initial recommended service set;
+3. installs the boot database when no live state exists;
+4. starts `s6-svscan` and reports its shallow readiness;
+5. starts `s6-user system boot` asynchronously.
 
-The backend then:
+On later logins it validates and synchronizes the repository while preserving
+existing enable/disable prescriptions. It does not replace boot state beneath
+an existing live s6-rc database.
 
-1. starts `s6-svscan -d 3` and waits for its shallow readiness byte through a private FIFO;
-2. sends `svscan-ready\0` to Turnstile as soon as the supervision event loop is operational, allowing PAM login to continue;
-3. runs `s6-user system boot` in the readiness helper, concurrently with desktop/session startup;
-4. `exec`s `s6-svscan`, making it the PID Turnstile tracks.
-
-Turnstile therefore gates login on a usable service manager, not on every service in the boot transaction reaching its declared readiness state. A slow or failed user service is reported independently and does not hold the login open.
-
-This preserves an explicit disabled/masked choice across ordinary synchronization and package upgrades. If a definition is removed entirely, s6-rc necessarily removes it from the set; a later reintroduction is a newly discovered service and receives store defaults again.
+The asynchronous boot helper has a manager-lifetime watchdog. If the tracked
+`s6-svscan` disappears, the pending boot transaction is terminated rather than
+being left orphaned during manager restart.
 
 ## Shutdown
 
-For `stop PID`, the backend first attempts:
+The backend first requests:
 
 ```sh
 s6-user live stop-everything -E -t 10000
 ```
 
-This performs reverse dependency and oneshot-down transitions. Failure is tolerated when no live database exists (for example, partial startup or migration). It then sends `SIGTERM` to the tracked `s6-svscan`, which is s6's graceful supervision-tree shutdown mechanism. SIGKILL and cgroup-wide killing are not the normal path.
-
-## System service location and boot graph
-
-`turnstile-s6` installs to `/etc/s6/sv/turnstiled`, the Artix package-maintained **system** store. It does not use `/etc/s6/adminsv`, which is reserved for local administrator definitions. The definition directly depends on `elogind`, so elogind starts first and stops after Turnstile during an s6-rc transaction.
-
-The current Artix `sddm-s6`, `openssh-s6`, and `elogind-s6` definitions were inspected. They do not expose a stable shared login target/dependency edge suitable for making every PAM login path depend on `turnstiled`. The administrator therefore explicitly enables `turnstiled` in the normal system set before logging in.
-
-`loginctl terminate-user` is supported as a forced administrative path. elogind sends `SIGTERM` recursively to the user's sessions, including Turnstile's internal background session. The Turnstile wrapper catches that signal and requests backend shutdown while its still-live session leader keeps the runtime directory pinned. Because the operation deliberately signals the complete cgroup, perfect s6-rc stop ordering is not guaranteed; uncatchable `SIGKILL` likewise cannot run graceful shutdown hooks.
+It then sends `SIGTERM` to the tracked `s6-svscan`. elogind-usersv supplies the
+configured TERM/KILL fallback and retains the elogind background lease until
+the manager has exited.

@@ -1,18 +1,34 @@
 # Installation and migration
 
-## Prerequisites
+Perform PAM and session-manager changes from a disposable machine with an
+independent root console available.
 
-Use an Artix installation booted with s6 and with elogind, s6-frontend 0.1.0.0, PipeWire, and WirePlumber available from configured repositories. Install the normal package build tools plus Turnstile's Meson/manual-page tools:
+## Package order
+
+Install the repositories in this order:
+
+1. `s6-user-projects` packages;
+2. `elogind-usersv` packages.
+
+The second set's `elogind-usersv-backend-s6-user` package depends on `s6-user`.
+
+## Install GitHub Release packages
+
+For each repository, download its `.pkg.tar.zst` files and `SHA256SUMS` from
+the official GitHub Release, then run:
 
 ```sh
-sudo pacman -S --needed base-devel git meson scdoc
+sha256sum -c SHA256SUMS
+sudo pacman -U ./*.pkg.tar.zst
 ```
 
-The build installs the project Turnstile fork, pinned to a reviewed commit. The fork prevents login-session sockets from leaking through `exec` and requires an explicit elogind background session to pin the user runtime directory for the manager lifetime.
+Release packages are unsigned. Download them only from the official repository
+pages.
 
-Do not install `turnstile-dinit` on an s6 system. `turnstile-s6` provides/conflicts with the common `init-turnstile` capability in the same way as other Artix init integrations.
+## Build from source
 
-## Build and install from Git
+Install `base-devel`, `git`, and Rust/Cargo first. Build and install this
+repository:
 
 ```sh
 git clone https://github.com/username13121/s6-user.git
@@ -20,78 +36,101 @@ cd s6-user
 ./build.sh && sudo pacman -U ./packages/*.pkg.tar.zst
 ```
 
-The transaction installs all seven package names (the PipeWire pkgbase emits two packages):
+Then build/install elogind-usersv from its repository in the same way. Neither
+build script runs pacman or resolves dependencies.
+
+This repository produces:
 
 ```text
-turnstile
 s6-user
-turnstile-s6
-turnstile-backend-s6
-pipewire-s6
-pipewire-pulse-s6
-wireplumber-s6
+pipewire-s6-user
+pipewire-pulse-s6-user
+wireplumber-s6-user
 ```
 
-The three audio service packages are usable reference definitions. They demonstrate readiness and dependency handling, but the general per-user s6 infrastructure is the project's primary purpose.
+Package renames conflict with and replace this project's old `*-s6` package
+names. The installed s6-rc service identifiers remain `pipewire`,
+`pipewire-pulse`, and `wireplumber`.
 
-## Select the Turnstile backend
+## Select the backend
 
-Edit `/etc/turnstile/turnstiled.conf`. Set the following policy explicitly (do not append duplicate keys if they already exist):
+elogind-usersv deliberately has no default backend. Edit:
 
-```ini
-backend = s6
-rundir_path = /run/user/%u
-manage_rundir = no
-linger = no
+```text
+/etc/elogind-usersv/config.toml
 ```
 
-Meaning:
+and set:
 
-- `backend = s6` selects `/usr/lib/turnstile/s6`.
-- `manage_rundir = no` leaves `/run/user/$UID` under elogind ownership.
-- `linger = no` stops the user manager after the last logout.
-
-These settings are deliberately not installed or changed by any package.
-
-Turnstile still needs `pam_turnstile` in the applicable SDDM/login/sshd PAM session stacks, alongside `pam_elogind`. Inspect the active files under `/etc/pam.d` after installation. The fork installs an internal `/etc/pam.d/turnstiled` profile whose critical entry is:
-
-```pam
-session required pam_elogind.so class=background type=unspecified
+```toml
+backend = "s6-user"
 ```
 
-This is separate from the login application's PAM stack. It creates the pinning elogind session that keeps `$XDG_RUNTIME_DIR` available until the s6 manager has exited.
+The name selects the root-installed executable at:
+
+```text
+/usr/libexec/elogind-usersv/backends/s6-user
+```
 
 ## Enable the system daemon
 
-The definition is installed at `/etc/s6/sv/turnstiled`. Add it to the system set and apply that set:
+The system definition is installed at `/etc/s6/sv/elogind-usersvd` and has a
+service dependency on `elogind`.
 
 ```sh
-sudo s6 enable turnstiled
+sudo s6 enable elogind-usersvd
 sudo s6 apply
+sudo s6 live status elogind-usersvd
 ```
 
-Confirm it is running:
+Do not activate the login PAM module until this status confirms that the
+daemon is running with a valid backend configuration.
+
+## Activate PAM
+
+Artix login stacks share `/etc/pam.d/system-login`. Use the packaged,
+idempotent editor rather than changing each SDDM, TTY, and SSH stack:
 
 ```sh
-sudo s6 live status turnstiled
-sudo s6 process status turnstiled
+sudo elogind-usersv-pam enable
+elogind-usersv-pam status
 ```
 
-`turnstiled` directly depends on the system `elogind` service, so s6-rc starts elogind first and stops it after Turnstile. Turnstile must still be running before a login application invokes `pam_turnstile`; the current Artix SDDM, sshd, and TTY definitions do not expose one stable shared login-target edge, so the administrator explicitly enables Turnstile in the normal system set.
+It inserts this required session entry immediately after `pam_elogind.so`:
 
-## Disable duplicate PipeWire autostart
+```pam
+session required pam_elogind_usersv.so
+```
 
-First verify that the s6-managed services work. Then find old XDG launchers:
+The tool refuses symlinks, unsafe ownership/modes, ambiguous anchors, duplicate
+entries, and unexpected pre-existing usersv configuration. Disable it before
+rollback:
 
 ```sh
-command -v artix-pipewire-launcher || :
+sudo elogind-usersv-pam disable
+```
+
+Package removal also attempts to disable the managed line so a required PAM
+entry cannot be left pointing at a removed module.
+
+Artix pambase may retain an optional `pam_turnstile.so` line. It belongs to
+pambase and is harmless when that module is absent; this project does not edit
+or remove it.
+
+## Disable duplicate PipeWire startup
+
+Do not run both the desktop's PipeWire launcher and s6-user services. Locate
+old XDG launchers:
+
+```sh
 grep -RIl 'artix-pipewire-launcher' \
     /etc/xdg/autostart \
     /usr/share/xdg/autostart \
     "$HOME/.config/autostart" 2>/dev/null || :
 ```
 
-A common Artix launcher is `/usr/bin/artix-pipewire-launcher`, invoked by a desktop entry named `pipewire.desktop`. Do **not** delete the executable or a package-owned desktop file. Disable the desktop entry through the desktop environment's autostart settings or with a per-user XDG override using the same desktop-file name. For example, when the system entry is `pipewire.desktop`:
+Disable package-owned desktop entries with a per-user override rather than
+deleting them. For an entry named `pipewire.desktop`:
 
 ```sh
 mkdir -p "$HOME/.config/autostart"
@@ -101,97 +140,70 @@ Hidden=true
 EOF
 ```
 
-Repeat per user, or deploy an administrator policy appropriate to the desktop. Do not leave both the launcher and s6 starting PipeWire: the launcher can kill/restart `pipewire` and `wireplumber` behind s6's back.
+## First login and operation
 
-## Activate the user manager
-
-Fully log out of **all** sessions for the user, then log back in. On first login the backend initializes the user's repository automatically. No manual `repository init`, `set commit`, service copying, or runtime-directory creation is needed.
-
-Check:
+Fully log out of all sessions, then log in again. The backend initializes the
+repository automatically. Verify as the unprivileged user:
 
 ```sh
+s6-user paths export
 s6-user live status
 s6-user set status
 s6-user process status pipewire
 ```
 
-Expected persistent paths with default XDG locations:
-
-```text
-~/.config/s6-rc/sources
-~/.config/s6-rc/compiled/current
-~/.local/state/s6-rc/repository
-```
-
-`s6-user` has no configuration file. It applies the fixed path policy with explicit s6-frontend command-line options.
-
-Expected runtime paths while logged in:
-
-```text
-/run/user/$UID/service
-/run/user/$UID/s6-rc
-/run/user/$UID/s6-frontend
-```
-
-## Service policy
-
-The packaged audio services have `flag-recommended`, so they are enabled when first discovered. Change persistent policy with:
+Persistent service policy is changed with:
 
 ```sh
 s6-user disable pipewire-pulse
 s6-user apply
-```
 
-or:
-
-```sh
 s6-user enable pipewire-pulse
 s6-user apply
 ```
 
-`enable`/`disable` edit the user's working set. `apply` commits, installs, and resets live state. `repository sync` preserves prescriptions for existing services:
+Package updates are imported with:
 
 ```sh
 s6-user repository sync
 s6-user apply
 ```
 
-Machine-wide overrides go under `/etc/s6-rc/user/sources`; individual overrides go under `$XDG_CONFIG_HOME/s6-rc/sources`. Use the same service directory name to override an earlier global definition, then synchronize/apply each affected user's private repository.
+## Configure persistent paths
 
-## Migrate from the 0.1.0-1 filesystem layout
+System policy belongs in `/etc/s6-user/config.toml`; per-user overrides belong
+in `$XDG_CONFIG_HOME/s6-user/config.toml`. Only persistent paths are accepted.
+See [Architecture](architecture.md) for fields and defaults.
 
-The revised paths replace the original `s6/user-sv` names. For an existing test user, migrate persistent user data while no user manager is running:
+Change persistent paths only while the user's manager is stopped. Migrate the
+repository and compiled database before logging in with the new configuration.
+Runtime paths remain fixed beneath `$XDG_RUNTIME_DIR`.
 
-```sh
-: "${XDG_CONFIG_HOME:=$HOME/.config}"
-: "${XDG_STATE_HOME:=$HOME/.local/state}"
+## Migrate away from Turnstile
 
-mkdir -p "$XDG_CONFIG_HOME/s6-rc" "$XDG_STATE_HOME/s6-rc"
+Before enabling usersv PAM integration:
 
-if [ -d "$XDG_CONFIG_HOME/s6/user-sv" ] && \
-   [ ! -e "$XDG_CONFIG_HOME/s6-rc/sources" ]; then
-    mv "$XDG_CONFIG_HOME/s6/user-sv" \
-       "$XDG_CONFIG_HOME/s6-rc/sources"
-fi
+1. remove any manually added `pam_turnstile` activation;
+2. disable and stop `turnstiled`;
+3. install/configure/start `elogind-usersvd`;
+4. run `sudo elogind-usersv-pam enable`;
+5. log out of every session and log back in;
+6. remove old Turnstile packages after verification.
 
-if [ -d "$XDG_STATE_HOME/s6/repo" ] && \
-   [ ! -e "$XDG_STATE_HOME/s6-rc/repository" ]; then
-    mv "$XDG_STATE_HOME/s6/repo" \
-       "$XDG_STATE_HOME/s6-rc/repository"
-fi
-```
-
-After installing the revised packages, update the migrated repository's store links and compile it:
-
-```sh
-s6-user repository init --update-stores
-s6-user set commit -f
-```
-
-The backend will install and boot that compiled set on the next clean login. The obsolete `$XDG_CONFIG_HOME/s6/user.conf` is no longer read and may be removed after verifying the migration. Machine overrides under `/etc/s6/user-sv` must be moved manually to `/etc/s6-rc/user/sources` by the administrator.
-
-If preserving existing enable/disable prescriptions is unnecessary, omit the repository move; the backend creates a fresh repository using the recommended flags from the new stores.
+Existing `$XDG_STATE_HOME/s6-rc/repository` and
+`$XDG_CONFIG_HOME/s6-rc/compiled/current` data can be retained. The renamed
+audio packages install the same service identifiers and source locations.
 
 ## Rollback
 
-Before removing packages, select another Turnstile backend (or disable Turnstile management) in administrator policy and stop/disable `turnstiled` as appropriate. Restore the prior PipeWire autostart only after the s6 user manager is no longer starting it. Removing these packages does not remove users' repositories or XDG policy automatically.
+From a root console:
+
+```sh
+sudo elogind-usersv-pam disable
+sudo s6 disable elogind-usersvd
+sudo s6 apply
+```
+
+Restore the desktop PipeWire launcher only after the per-user manager no longer
+starts PipeWire. Removing packages does not delete user repositories or custom
+configuration.

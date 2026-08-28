@@ -1,12 +1,11 @@
-pkgbase=pipewire-s6
-pkgname=('pipewire-s6' 'pipewire-pulse-s6')
-pkgver=0.1.0
-pkgrel=2
-pkgdesc='s6-rc user service definitions for PipeWire'
+pkgbase=pipewire-s6-user
+pkgname=('pipewire-s6-user' 'pipewire-pulse-s6-user')
+pkgver=0.2.0
+pkgrel=1
+pkgdesc='s6-user service definitions for PipeWire'
 arch=('any')
 url='https://github.com/username13121/s6-user.git'
 license=('0BSD')
-groups=('s6-world')
 source=('pw-type'
         'pw-run'
         'pw-notification-fd'
@@ -36,8 +35,10 @@ sha256sums=('d0001a150b83f68f09004c5059045cb76a3f064eed4d42ce072bc3722c118006'
             'ab40eef9625493db0c4a55cc4acd81ebd8f45f15c3e1ed66f60b046d0a993e87'
             'e43689ed5dbd460be77c4f8ecc14a1285671194f11f711520a7be8d8d6d847f7')
 
-package_pipewire-s6() {
-    depends=('pipewire' 's6-user')
+package_pipewire-s6-user() {
+    depends=('pipewire' 's6' 's6-user')
+    conflicts=('pipewire-s6')
+    replaces=('pipewire-s6')
 
     local dest="$pkgdir/usr/share/s6-rc/user/sources/pipewire"
     install -Dm644 pw-type "$dest/type"
@@ -50,9 +51,11 @@ package_pipewire-s6() {
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
 
-package_pipewire-pulse-s6() {
-    pkgdesc='s6-rc user service definition for PipeWire PulseAudio compatibility'
-    depends=('pipewire-pulse' 'pipewire-s6' 's6-user')
+package_pipewire-pulse-s6-user() {
+    pkgdesc='s6-user service definition for PipeWire PulseAudio compatibility'
+    depends=('pipewire-pulse' 'pipewire-s6-user' 's6')
+    conflicts=('pipewire-pulse-s6')
+    replaces=('pipewire-pulse-s6')
 
     local dest="$pkgdir/usr/share/s6-rc/user/sources/pipewire-pulse"
     install -Dm644 pulse-type "$dest/type"

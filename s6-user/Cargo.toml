@@ -1,0 +1,15 @@
+[package]
+name = "s6-user"
+version = "0.2.0"
+edition = "2024"
+license = "0BSD"
+description = "Persistent path policy wrapper for s6 --user"
+
+[[bin]]
+name = "s6-user"
+path = "main.rs"
+
+[dependencies]
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+toml = "0.9"

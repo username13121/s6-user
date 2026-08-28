@@ -1,19 +1,45 @@
 pkgname=s6-user
-pkgver=0.1.0
-pkgrel=2
-pkgdesc='Per-user s6-frontend repository and service-store policy wrapper'
-arch=('any')
+pkgver=0.2.0
+pkgrel=1
+pkgdesc='Configurable persistent path policy wrapper for s6 --user'
+arch=('x86_64')
 url='https://github.com/username13121/s6-user.git'
 license=('0BSD')
-depends=('s6' 's6-rc' 's6-frontend')
-source=('s6-user' 'LICENSE')
-sha256sums=('87d8fec9194acb455f534ef28182d391d36468408a2471f297bde75fb58e1011'
+depends=('s6-frontend' 'gcc-libs' 'glibc')
+makedepends=('cargo')
+backup=('etc/s6-user/config.toml')
+options=('!debug')
+source=('Cargo.toml'
+        'Cargo.lock'
+        'main.rs'
+        'config.toml'
+        'LICENSE')
+sha256sums=('9093542a94a042c3c354e7d0f4cd8aca9f56e6202b863b0de0788d39f4e5c972'
+            '75d2441db1726731913cd49768246d4a3b7d72c9b3727488e0b053759bfce61c'
+            '2da653f77d92b4c8a17238ef0c28f3084fb1968248de8dba207a8d5e1aa9faf7'
+            '5fc1c7742db77427f248b0f15d55a08eca815c7ccfe2ff7cd42df3b4047782f1'
             'e43689ed5dbd460be77c4f8ecc14a1285671194f11f711520a7be8d8d6d847f7')
 
-package() {
-    install -Dm755 s6-user "$pkgdir/usr/bin/s6-user"
+prepare() {
+    rm -rf crate
+    mkdir -p crate
+    cp Cargo.toml Cargo.lock main.rs crate/
+}
 
-    # Establish the package, administrator, and per-user store convention.
+build() {
+    cd crate
+    CARGO_TARGET_DIR=target cargo build --release --locked
+}
+
+check() {
+    cd crate
+    CARGO_TARGET_DIR=target cargo test --release --locked
+}
+
+package() {
+    install -Dm755 crate/target/release/s6-user "$pkgdir/usr/bin/s6-user"
+    install -Dm644 config.toml "$pkgdir/etc/s6-user/config.toml"
+
     install -dm755 "$pkgdir/usr/share/s6-rc/user/sources"
     install -dm755 "$pkgdir/etc/s6-rc/user/sources"
 

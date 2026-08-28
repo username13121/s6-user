@@ -1,35 +1,54 @@
 # Artix per-user s6 services
 
-This project's goal is to make per-user services straightforward to package, enable, and operate with s6. It provides one `s6-svscan`/s6-rc service manager per logged-in user, with Turnstile handling first-login/last-logout lifecycle and elogind retaining normal login/session/seat and runtime-directory ownership.
+This repository packages the `s6-user` policy wrapper and reusable per-user
+service definitions. Lifecycle management is provided separately by
+[`elogind-usersv`](https://github.com/username13121/elogind-usersv).
 
 ```text
-elogind + turnstiled + login PAM
-                       |
-                       v
-             per-user s6-svscan
-                       |
-                       v
-                    user s6-rc
-                /       |        \
-          pipewire  wireplumber  pipewire-pulse
+system s6 -> elogind + elogind-usersvd
+                         |
+                         v
+              elogind-usersv backend: s6-user
+                         |
+                         v
+                 per-user s6-svscan
+                         |
+                         v
+             pipewire / wireplumber / pipewire-pulse
 ```
 
 ## Packages
 
-- **turnstile** — pinned project fork with close-on-exec login tracking and an elogind runtime-directory lease.
-- **s6-user** — thin XDG-aware policy wrapper for per-user s6-frontend commands.
-- **turnstile-s6** — system s6-rc source at `/etc/s6/sv/turnstiled`.
-- **turnstile-backend-s6** — `/usr/lib/turnstile/s6` backend.
-- **pipewire-s6** / **pipewire-pulse-s6** — usable, ready-notifying reference services.
-- **wireplumber-s6** — usable WirePlumber reference service.
+- **s6-user** — a small Rust wrapper around `s6 --user`. It configures only
+  persistent repository, boot-database, and service-store paths.
+- **pipewire-s6-user** / **pipewire-pulse-s6-user** — ready-notifying per-user
+  service definitions.
+- **wireplumber-s6-user** — a per-user WirePlumber service definition.
 
-The PipeWire services demonstrate how real per-user dependencies, readiness checks, and recommended services fit this architecture. They are usable, but primarily serve as reference definitions rather than being the project's main purpose.
+Package names use `-s6-user` to distinguish this policy from system s6 service
+packages and any future official s6 user-service implementation. Service names
+remain `pipewire`, `pipewire-pulse`, and `wireplumber`.
 
-Package definitions are global under `/usr/share/s6-rc/user/sources`; service policy and compiled sets are private to each user under `$XDG_STATE_HOME` and `$XDG_CONFIG_HOME`.
+## Install release packages without compiling
 
-## Build and install from Git
+Download all `.pkg.tar.zst` files and `SHA256SUMS` from this repository's
+official GitHub Release. Verify and install them:
 
-On Artix with `base-devel`, `git`, `meson`, and `scdoc` installed:
+```sh
+sha256sum -c SHA256SUMS
+sudo pacman -U ./*.pkg.tar.zst
+```
+
+The packages are currently unsigned. Checksums detect download corruption but
+do not replace package signatures; download only from the official repository
+release page.
+
+Install this package set before installing the `elogind-usersv` package set.
+
+## Build and install from source
+
+Install `base-devel`, `git`, and Rust/Cargo first. The build script never runs
+pacman or installs dependencies.
 
 ```sh
 git clone https://github.com/username13121/s6-user.git
@@ -37,45 +56,46 @@ cd s6-user
 ./build.sh && sudo pacman -U ./packages/*.pkg.tar.zst
 ```
 
-`build.sh` uses `makepkg` and intentionally skips dependency resolution during the local build, so install the prerequisites above first. `pacman` still enforces every runtime dependency from the package metadata during installation.
-
-Then:
-
-1. Edit `/etc/turnstile/turnstiled.conf` and select the `s6` backend.
-2. Keep elogind in place and set `manage_rundir = no`.
-3. Set `linger = no` for first-login/last-logout behavior.
-4. Enable/start the system `turnstiled` s6 service.
-5. Disable the old PipeWire XDG autostart launcher without deleting package files.
-6. Fully log out, then log back in.
-
-See **[Installation](docs/installation.md)** for exact settings and commands.
+`build.sh` performs clean `makepkg --nodeps` builds and writes package checksums
+to `packages/SHA256SUMS`.
 
 ## User commands
 
 ```sh
 s6-user live status
+s6-user process status pipewire
 
 s6-user start wireplumber
-s6-user stop wireplumber
-s6-user start pipewire
 s6-user stop pipewire
-
 s6-user enable pipewire
-s6-user disable pipewire
+s6-user disable pipewire-pulse
 s6-user repository sync
 s6-user apply
 ```
 
-Use `s6-user` for all user-tree operations so they cannot accidentally target the system repository at `/etc/s6/repo`. The wrapper is stateless: it applies the fixed user path/store policy and `exec`s s6-frontend.
+Use `s6-user` instead of raw `s6` for user-tree operations. It prevents the
+system `/etc/s6/repo` and system stores from being selected by
+`/etc/s6-frontend.conf`.
 
-## Documentation
+## Configuration
 
-- [Architecture and filesystem policy](docs/architecture.md)
-- [Installation and migration](docs/installation.md)
-- [Lifecycle and behavior test checklist](docs/testing.md)
+System defaults and per-user overrides are read in this order:
 
-## Scope
+```text
+built-in defaults
+/etc/s6-user/config.toml
+$XDG_CONFIG_HOME/s6-user/config.toml
+```
 
-This project carries a narrowly patched Turnstile fork but does not replace elogind, create `/run/user/$UID`, or delete Artix PipeWire package files. elogind remains the runtime-directory and login/session authority; the administrator explicitly chooses the backend and migration policy.
+Only persistent paths are configurable. Runtime paths are selected by
+`s6 --user` from `XDG_RUNTIME_DIR` and cannot be overridden through s6-user.
+Inspect the complete resolved policy with:
+
+```sh
+s6-user paths export
+```
+
+See [Architecture](docs/architecture.md), [Installation](docs/installation.md),
+[Testing](docs/testing.md), and [Releasing](docs/releasing.md).
 
 License: [0BSD](LICENSE).

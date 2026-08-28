@@ -26,28 +26,32 @@ The backend follows Turnstile's existing `run`, `ready`, and `stop PID` protocol
 
 The per-user `s6-svscan` process owns supervision. s6-rc owns the dependency graph, readiness transitions, oneshots, live state, and persistent enable/disable/mask prescriptions.
 
+### s6-user and the backend adapter
+
+`s6-user` only applies the fixed per-user path policy before `exec`ing s6-frontend. The s6-specific Turnstile backend composes public `s6-user` commands for repository synchronization, live installation, boot, and shutdown, then directly `exec`s `s6-svscan` so Turnstile tracks the actual manager PID.
+
 ## Filesystem policy
 
 | Path | Owner/purpose |
 |---|---|
-| `/usr/share/s6/user-sv/` | package-maintained user service source definitions |
-| `/etc/s6/user-sv/` | machine administrator user-service overrides/additions |
-| `$XDG_CONFIG_HOME/s6/user-sv/` | individual user definitions/overrides |
-| `$XDG_STATE_HOME/s6/repo/` | individual repository and service-set prescriptions |
+| `/usr/share/s6-rc/user/sources/` | package-maintained user service source definitions |
+| `/etc/s6-rc/user/sources/` | machine administrator user-service overrides/additions |
+| `$XDG_CONFIG_HOME/s6-rc/sources/` | individual user definitions/overrides |
+| `$XDG_STATE_HOME/s6-rc/repository/` | individual repository and service-set prescriptions |
 | `$XDG_CONFIG_HOME/s6-rc/compiled/current` | individual compiled boot database |
 | `$XDG_RUNTIME_DIR/service/` | live user supervision scan directory |
 | `$XDG_RUNTIME_DIR/s6-rc/` | live s6-rc database/state |
-| `$XDG_CONFIG_HOME/s6/user.conf` | generated per-user s6-frontend configuration |
+| `$XDG_RUNTIME_DIR/s6-frontend/` | s6-frontend temporary data |
 
 The configured store order is:
 
 ```text
-/usr/share/s6/user-sv:
-/etc/s6/user-sv:
-$XDG_CONFIG_HOME/s6/user-sv
+/usr/share/s6-rc/user/sources:
+/etc/s6-rc/user/sources:
+$XDG_CONFIG_HOME/s6-rc/sources
 ```
 
-s6-rc processes stores in order and a later definition replaces the same service name from an earlier store. Thus package definition < machine override < individual override. Package files never need to be copied into a home directory.
+s6-rc processes stores in order and a later definition replaces the same service name from an earlier store. Thus package definition < machine override < individual override. Package files never need to be copied into a home directory. The global source locations are distribution policy; the per-user locations retain their XDG base variables.
 
 The normal XDG fallbacks are:
 
@@ -59,27 +63,29 @@ XDG_CACHE_HOME=$HOME/.cache
 XDG_RUNTIME_DIR=/run/user/$UID
 ```
 
-`s6-user` creates user-owned persistent configuration/state parents as needed. It does not create `$XDG_RUNTIME_DIR`; the backend fails if that directory does not already exist.
+`s6-user` creates user-owned persistent source, repository-parent, and compiled-database-parent directories as needed. It does not create `$XDG_RUNTIME_DIR`; the backend fails if that directory does not already exist.
 
 ## Why `s6-user` exists
 
-Artix's s6-frontend 0.1.0.0 correctly derives these runtime values with `-u`:
-
-```text
-scandir=$XDG_RUNTIME_DIR/service
-livedir=$XDG_RUNTIME_DIR/s6-rc
-stmpdir=$XDG_RUNTIME_DIR/s6-frontend
-```
-
-That release does not replace the system `repodir`, `bootdb`, or `storelist` by itself. `s6-user` writes a stable user-only config and runs only its child command as:
+`s6-user` is a thin, stateless policy wrapper. It derives and validates the XDG bases, supplies every user policy value with a named global option, and then replaces itself with s6-frontend:
 
 ```sh
-S6_CONF="$XDG_CONFIG_HOME/s6/user.conf" exec s6 -u ...
+exec s6 \
+    --user \
+    --verbosity=1 \
+    --scandir="$XDG_RUNTIME_DIR/service" \
+    --livedir="$XDG_RUNTIME_DIR/s6-rc" \
+    --repodir="$XDG_STATE_HOME/s6-rc/repository" \
+    --bootdb="$XDG_CONFIG_HOME/s6-rc/compiled/current" \
+    --stmpdir="$XDG_RUNTIME_DIR/s6-frontend" \
+    --storelist="/usr/share/s6-rc/user/sources:/etc/s6-rc/user/sources:$XDG_CONFIG_HOME/s6-rc/sources" \
+    --fdholder-user= \
+    ...
 ```
 
-It never exports `S6_CONF` into the login shell or changes `/etc/s6-frontend.conf`, so root/system `s6` commands keep using `/etc/s6/repo` and `/etc/s6/sv:/etc/s6/adminsv`.
+Explicit command-line options remain authoritative over both `/etc/s6-frontend.conf` and s6-frontend's built-in user defaults. Normal verbosity is fixed at 1. The empty fdholder-user value prevents a system-configured dedicated account from being embedded in a user database and leaves the internal fd-holder running as the `s6-svscan` user. The wrapper has no configuration file, custom lifecycle commands, resident process, or private state, and it does not use `S6_CONF`.
 
-The backend asks `version export` only for `scandir`. It never derives `bootdb` from that output because s6-frontend 0.1.0.0 can display an incorrect `bootdb` value. The user boot database is always configured explicitly.
+The Turnstile backend uses `s6-user` for every frontend/repository operation and reads the documented `s6-user version export` output for `scandir`, `livedir`, and `repodir`. It does not duplicate those paths or inspect repository internals. It deliberately does not consume the exported `bootdb`, because s6-frontend 0.1.0.0 displays that field incorrectly; the explicit boot path is still used by the underlying commands.
 
 ## Startup transaction
 

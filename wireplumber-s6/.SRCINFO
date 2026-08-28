@@ -1,7 +1,7 @@
 pkgbase = wireplumber-s6
 	pkgdesc = s6-rc user service definition for WirePlumber
 	pkgver = 0.1.0
-	pkgrel = 1
+	pkgrel = 2
 	url = https://github.com/artix-s6-user/artix-s6-user
 	arch = any
 	groups = s6-world

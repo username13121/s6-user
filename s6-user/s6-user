@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Run s6-frontend against this user's repository and service stores.
+# Run s6-frontend with the fixed per-user repository and service-store policy.
 
 set -eu
 
@@ -38,47 +38,43 @@ case ${XDG_RUNTIME_DIR-} in
     *) XDG_RUNTIME_DIR="/run/user/$uid" ;;
 esac
 
-# The store list is colon-separated and the frontend config is line-based.
-# Reject values that cannot be represented without changing their meaning.
-case "$XDG_CONFIG_HOME$XDG_STATE_HOME" in
-    *:*) fail "XDG_CONFIG_HOME and XDG_STATE_HOME must not contain ':'" ;;
+# The store list is colon-separated, and `version export` is line-based.
+case $XDG_CONFIG_HOME in
+    *:*) fail "XDG_CONFIG_HOME must not contain ':'" ;;
 esac
 newline='
 '
-case "$XDG_CONFIG_HOME$XDG_STATE_HOME" in
-    *"$newline"*) fail "XDG paths must not contain newlines" ;;
+case "$HOME$XDG_CONFIG_HOME$XDG_DATA_HOME$XDG_STATE_HOME$XDG_CACHE_HOME$XDG_RUNTIME_DIR" in
+    *"$newline"*) fail "HOME and XDG paths must not contain newlines" ;;
 esac
 
 export HOME XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME XDG_RUNTIME_DIR
 
-config_dir="$XDG_CONFIG_HOME/s6"
-config="$config_dir/user.conf"
-repo="$XDG_STATE_HOME/s6/repo"
+scandir="$XDG_RUNTIME_DIR/service"
+livedir="$XDG_RUNTIME_DIR/s6-rc"
+repo="$XDG_STATE_HOME/s6-rc/repository"
 bootdb="$XDG_CONFIG_HOME/s6-rc/compiled/current"
-user_store="$XDG_CONFIG_HOME/s6/user-sv"
+stmpdir="$XDG_RUNTIME_DIR/s6-frontend"
+user_store="$XDG_CONFIG_HOME/s6-rc/sources"
+storelist="/usr/share/s6-rc/user/sources:/etc/s6-rc/user/sources:$user_store"
 
 umask 077
 mkdir -p \
-    "$config_dir" \
     "$user_store" \
-    "$XDG_STATE_HOME/s6" \
+    "$XDG_STATE_HOME/s6-rc" \
     "$XDG_CONFIG_HOME/s6-rc/compiled"
 
-tmp=$(mktemp "$config.tmp.XXXXXX") || fail "unable to create frontend config"
-trap 'rm -f "$tmp"' 0 HUP INT TERM
-
-cat >"$tmp" <<EOF
-repodir = $repo
-bootdb = $bootdb
-storelist = /usr/share/s6/user-sv:/etc/s6/user-sv:$user_store
-verbosity = 1
-EOF
-
-if [ -r "$config" ] && cmp -s "$tmp" "$config"; then
-    rm -f "$tmp"
-else
-    mv -f "$tmp" "$config"
-fi
-trap - 0 HUP INT TERM
-
-S6_CONF="$config" exec s6 -u "$@"
+# Explicit options keep command-line policy authoritative over both the system
+# frontend configuration and s6-frontend's built-in user defaults. An empty
+# fdholder user leaves the internal fd-holder running as the s6-svscan user.
+exec s6 \
+    --user \
+    --verbosity=1 \
+    --scandir="$scandir" \
+    --livedir="$livedir" \
+    --repodir="$repo" \
+    --bootdb="$bootdb" \
+    --stmpdir="$stmpdir" \
+    --storelist="$storelist" \
+    --fdholder-user= \
+    "$@"

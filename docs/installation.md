@@ -121,10 +121,12 @@ s6-user process status pipewire
 Expected persistent paths with default XDG locations:
 
 ```text
-~/.config/s6/user.conf
+~/.config/s6-rc/sources
 ~/.config/s6-rc/compiled/current
-~/.local/state/s6/repo
+~/.local/state/s6-rc/repository
 ```
+
+`s6-user` has no configuration file. It applies the fixed path policy with explicit s6-frontend command-line options.
 
 Expected runtime paths while logged in:
 
@@ -157,7 +159,41 @@ s6-user repository sync
 s6-user apply
 ```
 
-Machine-wide overrides go under `/etc/s6/user-sv`; individual overrides go under `$XDG_CONFIG_HOME/s6/user-sv`. Use the same service directory name to override an earlier global definition, then synchronize/apply each affected user's private repository.
+Machine-wide overrides go under `/etc/s6-rc/user/sources`; individual overrides go under `$XDG_CONFIG_HOME/s6-rc/sources`. Use the same service directory name to override an earlier global definition, then synchronize/apply each affected user's private repository.
+
+## Migrate from the 0.1.0-1 filesystem layout
+
+The revised paths replace the original `s6/user-sv` names. For an existing test user, migrate persistent user data while no user manager is running:
+
+```sh
+: "${XDG_CONFIG_HOME:=$HOME/.config}"
+: "${XDG_STATE_HOME:=$HOME/.local/state}"
+
+mkdir -p "$XDG_CONFIG_HOME/s6-rc" "$XDG_STATE_HOME/s6-rc"
+
+if [ -d "$XDG_CONFIG_HOME/s6/user-sv" ] && \
+   [ ! -e "$XDG_CONFIG_HOME/s6-rc/sources" ]; then
+    mv "$XDG_CONFIG_HOME/s6/user-sv" \
+       "$XDG_CONFIG_HOME/s6-rc/sources"
+fi
+
+if [ -d "$XDG_STATE_HOME/s6/repo" ] && \
+   [ ! -e "$XDG_STATE_HOME/s6-rc/repository" ]; then
+    mv "$XDG_STATE_HOME/s6/repo" \
+       "$XDG_STATE_HOME/s6-rc/repository"
+fi
+```
+
+After installing the revised packages, update the migrated repository's store links and compile it:
+
+```sh
+s6-user repository init --update-stores
+s6-user set commit -f
+```
+
+The backend will install and boot that compiled set on the next clean login. The obsolete `$XDG_CONFIG_HOME/s6/user.conf` is no longer read and may be removed after verifying the migration. Machine overrides under `/etc/s6/user-sv` must be moved manually to `/etc/s6-rc/user/sources` by the administrator.
+
+If preserving existing enable/disable prescriptions is unnecessary, omit the repository move; the backend creates a fresh repository using the recommended flags from the new stores.
 
 ## Build a custom pacman repository
 

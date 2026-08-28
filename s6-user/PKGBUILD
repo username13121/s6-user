@@ -1,21 +1,21 @@
 pkgname=s6-user
 pkgver=0.1.0
-pkgrel=1
-pkgdesc='Per-user s6-frontend repository and XDG configuration wrapper'
+pkgrel=2
+pkgdesc='Per-user s6-frontend repository and service-store policy wrapper'
 arch=('any')
 url='https://github.com/artix-s6-user/artix-s6-user'
 license=('0BSD')
 depends=('s6' 's6-rc' 's6-frontend')
 source=('s6-user' 'LICENSE')
-sha256sums=('0b382b541f316c0a511c1d91e161a868dafdceebd6ada05db1cb389897c9097f'
+sha256sums=('87d8fec9194acb455f534ef28182d391d36468408a2471f297bde75fb58e1011'
             'e43689ed5dbd460be77c4f8ecc14a1285671194f11f711520a7be8d8d6d847f7')
 
 package() {
     install -Dm755 s6-user "$pkgdir/usr/bin/s6-user"
 
     # Establish the package, administrator, and per-user store convention.
-    install -dm755 "$pkgdir/usr/share/s6/user-sv"
-    install -dm755 "$pkgdir/etc/s6/user-sv"
+    install -dm755 "$pkgdir/usr/share/s6-rc/user/sources"
+    install -dm755 "$pkgdir/etc/s6-rc/user/sources"
 
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

@@ -1,7 +1,7 @@
 pkgbase=pipewire-s6
 pkgname=('pipewire-s6' 'pipewire-pulse-s6')
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 pkgdesc='s6-rc user service definitions for PipeWire'
 arch=('any')
 url='https://github.com/artix-s6-user/artix-s6-user'
@@ -39,7 +39,7 @@ sha256sums=('d0001a150b83f68f09004c5059045cb76a3f064eed4d42ce072bc3722c118006'
 package_pipewire-s6() {
     depends=('pipewire' 's6-user')
 
-    local dest="$pkgdir/usr/share/s6/user-sv/pipewire"
+    local dest="$pkgdir/usr/share/s6-rc/user/sources/pipewire"
     install -Dm644 pw-type "$dest/type"
     install -Dm755 pw-run "$dest/run"
     install -Dm644 pw-notification-fd "$dest/notification-fd"
@@ -54,7 +54,7 @@ package_pipewire-pulse-s6() {
     pkgdesc='s6-rc user service definition for PipeWire PulseAudio compatibility'
     depends=('pipewire-pulse' 'pipewire-s6' 's6-user')
 
-    local dest="$pkgdir/usr/share/s6/user-sv/pipewire-pulse"
+    local dest="$pkgdir/usr/share/s6-rc/user/sources/pipewire-pulse"
     install -Dm644 pulse-type "$dest/type"
     install -Dm755 pulse-run "$dest/run"
     install -Dm644 pulse-notification-fd "$dest/notification-fd"

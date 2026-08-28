@@ -16,13 +16,13 @@ elogind + turnstiled + login PAM
 
 ## Packages
 
-- **s6-user** — XDG-aware `s6-user` wrapper and global user-store convention.
+- **s6-user** — thin XDG-aware policy wrapper for per-user s6-frontend commands.
 - **turnstile-s6** — system s6-rc source at `/etc/s6/sv/turnstiled`.
 - **turnstile-backend-s6** — `/usr/lib/turnstile/s6` backend.
 - **pipewire-s6** / **pipewire-pulse-s6** — split package with ready-notifying user services.
 - **wireplumber-s6** — WirePlumber user service.
 
-Package definitions are global under `/usr/share/s6/user-sv`; service policy and compiled sets are private to each user under `$XDG_STATE_HOME` and `$XDG_CONFIG_HOME`.
+Package definitions are global under `/usr/share/s6-rc/user/sources`; service policy and compiled sets are private to each user under `$XDG_STATE_HOME` and `$XDG_CONFIG_HOME`.
 
 ## Build and install from Git
 
@@ -65,7 +65,7 @@ s6-user repository sync
 s6-user apply
 ```
 
-Use `s6-user` for repository/set operations so they cannot accidentally target the system repository at `/etc/s6/repo`. `s6 -u live status` and `s6 -u process status pipewire` can still be useful for direct runtime inspection.
+Use `s6-user` for all user-tree operations so they cannot accidentally target the system repository at `/etc/s6/repo`. The wrapper is stateless: it applies the fixed user path/store policy and `exec`s s6-frontend.
 
 ## Documentation
 

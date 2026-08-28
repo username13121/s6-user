@@ -9,9 +9,9 @@ Run lifecycle tests on a non-production machine. Keep a root console available w
   - `/usr/bin/s6-user`;
   - `/usr/lib/turnstile/s6`;
   - `/etc/s6/sv/turnstiled/{type,run}` (not `/etc/s6/adminsv`);
-  - audio services only under `/usr/share/s6/user-sv`.
-- [ ] `s6-user version export` reports user `scandir`, `livedir`, and `repodir` paths.
-- [ ] Running `s6-user` does not export `S6_CONF` back into the calling shell.
+  - audio services only under `/usr/share/s6-rc/user/sources`.
+- [ ] `s6-user version export` reports the configured user `scandir`, `livedir`, `repodir`, `stmpdir`, and `storelist` paths, `verbosity=1`, and an empty `fdhuser`. (s6-frontend 0.1.0.0 misdisplays `bootdb`.)
+- [ ] Running `s6-user` creates no frontend configuration file and does not require `S6_CONF`.
 - [ ] A normal root/system `s6 version export` still reports `/etc/s6/repo` and the system stores.
 - [ ] `/run/user/$UID` is created by elogind before backend startup, not by these packages.
 
@@ -22,7 +22,7 @@ Start with no repository for a disposable test user (or a newly created user).
 - [ ] Log in once through SDDM, TTY, or SSH.
 - [ ] `/run/user/$UID` exists.
 - [ ] Exactly one user-owned `s6-svscan` starts.
-- [ ] `$XDG_STATE_HOME/s6/repo` is initialized automatically.
+- [ ] `$XDG_STATE_HOME/s6-rc/repository` is initialized automatically.
 - [ ] `$XDG_CONFIG_HOME/s6-rc/compiled/current` exists.
 - [ ] `s6-user live status` shows `pipewire`, `wireplumber`, and `pipewire-pulse` up when all three packages are installed and recommended.
 - [ ] `${PIPEWIRE_RUNTIME_DIR:-$XDG_RUNTIME_DIR}/pipewire-0` is a socket before dependents are considered up.
@@ -104,16 +104,16 @@ s6-user set status pipewire-pulse
 
 ## Overrides
 
-- [ ] Add a controlled override with the same service name under `/etc/s6/user-sv`, synchronize, and verify it replaces `/usr/share/s6/user-sv`.
-- [ ] Add an individual override under `$XDG_CONFIG_HOME/s6/user-sv`, synchronize, and verify it replaces both global definitions.
+- [ ] Add a controlled override with the same service name under `/etc/s6-rc/user/sources`, synchronize, and verify it replaces `/usr/share/s6-rc/user/sources`.
+- [ ] Add an individual override under `$XDG_CONFIG_HOME/s6-rc/sources`, synchronize, and verify it replaces both global definitions.
 - [ ] Remove test overrides and synchronize/apply again.
 
 ## Multiple users
 
 For two simultaneously logged-in users:
 
-- [ ] Both use definitions from `/usr/share/s6/user-sv`.
-- [ ] Each has a distinct `$XDG_STATE_HOME/s6/repo`.
+- [ ] Both use definitions from `/usr/share/s6-rc/user/sources`.
+- [ ] Each has a distinct `$XDG_STATE_HOME/s6-rc/repository`.
 - [ ] Each has a distinct `$XDG_RUNTIME_DIR/service` and `$XDG_RUNTIME_DIR/s6-rc`.
 - [ ] Disabling `pipewire-pulse` for Alice does not change Bob's set.
 - [ ] Logging Alice out of her last session does not stop Bob's manager.

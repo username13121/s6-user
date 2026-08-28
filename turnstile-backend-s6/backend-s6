@@ -39,10 +39,8 @@ case ${1-} in
         export XDG_RUNTIME_DIR XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME
 
         # A failed transition is harmless during migration or partial startup.
-        if [ -e "$XDG_RUNTIME_DIR/s6-rc" ]; then
-            /usr/bin/s6-user live stop-everything -E -t 10000 \
-                >/dev/null 2>&1 || :
-        fi
+        /usr/bin/s6-user live stop-everything -E -t 10000 \
+            >/dev/null 2>&1 || :
 
         # SIGTERM requests s6-svscan's graceful supervision-tree shutdown.
         exec kill -TERM "$pid"
@@ -102,48 +100,52 @@ export XDG_RUNTIME_DIR XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HO
     exit 70
 }
 
-repo="$XDG_STATE_HOME/s6/repo"
-livedir="$XDG_RUNTIME_DIR/s6-rc"
-bootdb="$XDG_CONFIG_HOME/s6-rc/compiled/current"
+# s6-user is the single authority for frontend paths. Read its documented
+# key/value export instead of reproducing its filesystem policy here.
+path_export=$(/usr/bin/s6-user version export)
+scandir=
+livedir=
+repodir=
+while IFS='=' read -r name value; do
+    case $name in
+        scandir) scandir=$value ;;
+        livedir) livedir=$value ;;
+        repodir) repodir=$value ;;
+    esac
+done <<EOF
+$path_export
+EOF
+
+require_absolute_path()
+{
+    case $1 in
+        /*) ;;
+        *)
+            echo "s6: unable to determine an absolute user $2" >&2
+            exit 70
+            ;;
+    esac
+}
+require_absolute_path "$scandir" scandir
+require_absolute_path "$livedir" livedir
+require_absolute_path "$repodir" repodir
 
 # A new repository inherits recommended/essential policy from the stores.
 # Synchronization preserves prescriptions for services already known to it.
-if [ ! -e "$repo" ]; then
+if [ ! -e "$repodir" ]; then
     /usr/bin/s6-user repository init
 else
     /usr/bin/s6-user repository list >/dev/null
     /usr/bin/s6-user repository sync
 fi
 
-if [ -e "$livedir" ] || [ -L "$livedir" ]; then
-    # Turnstile may be recovering a manager that died while sessions remained.
-    # Never replace the boot database underneath an existing live s6-rc state.
-    [ -e "$bootdb" ] || {
-        echo "s6: live state exists but the user boot database is missing" >&2
-        exit 70
-    }
-else
+if [ ! -e "$livedir" ] && [ ! -L "$livedir" ]; then
     # No live state uses the boot database, so it is safe to replace it.
     /usr/bin/s6-user set commit -f
     /usr/bin/s6-user live install --init
 fi
 
-# Ask the frontend for scandir only. s6-frontend 0.1.0.0's exported bootdb
-# display is not authoritative and is deliberately ignored here.
-SCANDIR=$(
-    /usr/bin/s6-user version export |
-        sed -n 's/^scandir=//p'
-)
-
-case $SCANDIR in
-    /*) ;;
-    *)
-        echo "s6: unable to determine an absolute user scandir" >&2
-        exit 70
-        ;;
-esac
-
-mkdir -p "$SCANDIR"
+mkdir -p "$scandir"
 
 SVREADY="$STATE/svscan-ready"
 rm -f "$SVREADY"
@@ -165,4 +167,4 @@ exec 4>"$TURNSTILE_READY"
 exec 4>&-
 
 # Turnstile must track the service manager itself, not an intermediate shell.
-exec s6-svscan -d 3 "$SCANDIR" 3>"$SVREADY"
+exec s6-svscan -d 3 "$scandir" 3>"$SVREADY"

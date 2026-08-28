@@ -1,6 +1,7 @@
 /packages/
 /.build/
 /.sources/
+/turnstile/*.tar.gz
 **/pkg/
 **/src/
 *.pkg.tar.*

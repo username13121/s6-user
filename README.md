@@ -1,5 +1,9 @@
 # Artix per-user s6 services
 
+> [!WARNING]
+> **Work in progress.** Bugs and breaking changes are expected. Test carefully
+> before relying on these packages, especially on a primary workstation.
+
 This repository packages the `s6-user` policy wrapper and reusable per-user
 service definitions. Lifecycle management is provided separately by
 [`elogind-usersv`](https://github.com/username13121/elogind-usersv).

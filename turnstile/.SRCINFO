@@ -1,0 +1,17 @@
+pkgbase = turnstile
+	pkgdesc = PAM session tracker and user service-manager launcher
+	pkgver = 0.1.11.r2
+	pkgrel = 1
+	url = https://github.com/username13121/turnstile
+	arch = x86_64
+	license = BSD-2-Clause
+	makedepends = meson
+	makedepends = scdoc
+	depends = pam
+	depends = elogind
+	options = !debug
+	backup = etc/turnstile/turnstiled.conf
+	source = turnstile-75b980edba8b7bb332f0ae936a1a9bb0917521b5.tar.gz::https://github.com/username13121/turnstile/archive/75b980edba8b7bb332f0ae936a1a9bb0917521b5.tar.gz
+	sha256sums = 68dbe05f79b1a2126de8d8c244599eb53953f345d705bf4b6dfc0c8dc5dccbd6
+
+pkgname = turnstile

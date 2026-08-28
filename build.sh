@@ -26,6 +26,7 @@ if [[ ${SIGN_PACKAGES:-0} == 1 ]]; then
 fi
 
 for package_dir in \
+    turnstile \
     s6-user \
     turnstile-s6 \
     turnstile-backend-s6 \

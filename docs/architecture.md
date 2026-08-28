@@ -17,10 +17,12 @@ Turnstile remains responsible for:
 
 - first-login/last-logout accounting;
 - one manager instance shared by concurrent SDDM, TTY, and SSH sessions;
-- waiting for manager readiness before PAM login continues;
+- waiting for shallow manager readiness before PAM login continues;
 - restarting the manager if its tracked process exits while sessions remain.
 
-The backend follows Turnstile's existing `run`, `ready`, and `stop PID` protocol. Turnstile itself is not patched.
+This setup uses the maintained project fork of Turnstile. Its login PAM socket is close-on-exec, so desktop descendants cannot retain stale Turnstile sessions. Its internal manager PAM transaction requires elogind and explicitly registers a `background` session. That pinning session is a lifetime lease on `$XDG_RUNTIME_DIR`: backend startup fails unless PAM supplies `XDG_SESSION_ID` and an absolute `XDG_RUNTIME_DIR`, and the lease is released only after the tracked manager exits.
+
+The backend follows Turnstile's existing `run`, `ready`, and `stop PID` protocol.
 
 ### s6 and s6-rc
 
@@ -108,9 +110,11 @@ If `$XDG_RUNTIME_DIR/s6-rc` already exists, Turnstile may be recovering a manage
 The backend then:
 
 1. starts `s6-svscan -d 3` and waits for its shallow readiness byte through a private FIFO;
-2. runs `s6-user system boot`, which initializes the live s6-rc state and starts the default bundle;
-3. sends `booted\0` to Turnstile only after that command succeeds;
+2. sends `svscan-ready\0` to Turnstile as soon as the supervision event loop is operational, allowing PAM login to continue;
+3. runs `s6-user system boot` in the readiness helper, concurrently with desktop/session startup;
 4. `exec`s `s6-svscan`, making it the PID Turnstile tracks.
+
+Turnstile therefore gates login on a usable service manager, not on every service in the boot transaction reaching its declared readiness state. A slow or failed user service is reported independently and does not hold the login open.
 
 This preserves an explicit disabled/masked choice across ordinary synchronization and package upgrades. If a definition is removed entirely, s6-rc necessarily removes it from the set; a later reintroduction is a newly discovered service and receives store defaults again.
 
@@ -126,6 +130,8 @@ This performs reverse dependency and oneshot-down transitions. Failure is tolera
 
 ## System service location and boot graph
 
-`turnstile-s6` installs to `/etc/s6/sv/turnstiled`, the Artix package-maintained **system** store. It does not use `/etc/s6/adminsv`, which is reserved for local administrator definitions.
+`turnstile-s6` installs to `/etc/s6/sv/turnstiled`, the Artix package-maintained **system** store. It does not use `/etc/s6/adminsv`, which is reserved for local administrator definitions. The definition directly depends on `elogind`, so elogind starts first and stops after Turnstile during an s6-rc transaction.
 
-The current Artix `sddm-s6`, `openssh-s6`, and `elogind-s6` definitions were inspected. They do not expose a stable shared login target/dependency edge suitable for making every PAM login path depend on `turnstiled`. This first version therefore does not invent a target name: the administrator explicitly enables `turnstiled` in the normal system set before logging in.
+The current Artix `sddm-s6`, `openssh-s6`, and `elogind-s6` definitions were inspected. They do not expose a stable shared login target/dependency edge suitable for making every PAM login path depend on `turnstiled`. The administrator therefore explicitly enables `turnstiled` in the normal system set before logging in.
+
+`loginctl terminate-user` is supported as a forced administrative path. elogind sends `SIGTERM` recursively to the user's sessions, including Turnstile's internal background session. The Turnstile wrapper catches that signal and requests backend shutdown while its still-live session leader keeps the runtime directory pinned. Because the operation deliberately signals the complete cgroup, perfect s6-rc stop ordering is not guaranteed; uncatchable `SIGKILL` likewise cannot run graceful shutdown hooks.

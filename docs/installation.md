@@ -2,11 +2,13 @@
 
 ## Prerequisites
 
-Use an Artix installation booted with s6 and with elogind, s6-frontend 0.1.0.0, Turnstile, PipeWire, and WirePlumber available from configured repositories. Install the normal package build tools if building from Git:
+Use an Artix installation booted with s6 and with elogind, s6-frontend 0.1.0.0, PipeWire, and WirePlumber available from configured repositories. Install the normal package build tools plus Turnstile's Meson/manual-page tools:
 
 ```sh
-sudo pacman -S --needed base-devel git
+sudo pacman -S --needed base-devel git meson scdoc
 ```
+
+The build installs the project Turnstile fork, pinned to a reviewed commit. The fork prevents login-session sockets from leaking through `exec` and requires an explicit elogind background session to pin the user runtime directory for the manager lifetime.
 
 Do not install `turnstile-dinit` on an s6 system. `turnstile-s6` provides/conflicts with the common `init-turnstile` capability in the same way as other Artix init integrations.
 
@@ -18,9 +20,10 @@ cd s6-user
 ./build.sh && sudo pacman -U ./packages/*.pkg.tar.zst
 ```
 
-The transaction installs all six package names (the PipeWire pkgbase emits two packages):
+The transaction installs all seven package names (the PipeWire pkgbase emits two packages):
 
 ```text
+turnstile
 s6-user
 turnstile-s6
 turnstile-backend-s6
@@ -50,7 +53,13 @@ Meaning:
 
 These settings are deliberately not installed or changed by any package.
 
-Turnstile still needs `pam_turnstile` in the applicable SDDM/login/sshd PAM session stacks, alongside `pam_elogind`. Use the Turnstile/Artix PAM setup appropriate to the machine and inspect the active files under `/etc/pam.d`; this project does not overwrite PAM policy.
+Turnstile still needs `pam_turnstile` in the applicable SDDM/login/sshd PAM session stacks, alongside `pam_elogind`. Inspect the active files under `/etc/pam.d` after installation. The fork installs an internal `/etc/pam.d/turnstiled` profile whose critical entry is:
+
+```pam
+session required pam_elogind.so class=background type=unspecified
+```
+
+This is separate from the login application's PAM stack. It creates the pinning elogind session that keeps `$XDG_RUNTIME_DIR` available until the s6 manager has exited.
 
 ## Enable the system daemon
 
@@ -68,7 +77,7 @@ sudo s6 live status turnstiled
 sudo s6 process status turnstiled
 ```
 
-`turnstiled` must be running before a PAM login attempts to use it. This version intentionally does not attach a guessed `login.target`-style dependency to SDDM, sshd, or TTY services; current Artix s6 definitions do not provide one common stable edge.
+`turnstiled` directly depends on the system `elogind` service, so s6-rc starts elogind first and stops it after Turnstile. Turnstile must still be running before a login application invokes `pam_turnstile`; the current Artix SDDM, sshd, and TTY definitions do not expose one stable shared login-target edge, so the administrator explicitly enables Turnstile in the normal system set.
 
 ## Disable duplicate PipeWire autostart
 

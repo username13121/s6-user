@@ -1,7 +1,7 @@
 pkgbase = turnstile-backend-s6
 	pkgdesc = Turnstile backend for per-user s6-svscan and s6-rc
 	pkgver = 0.1.0
-	pkgrel = 2
+	pkgrel = 3
 	url = https://github.com/username13121/s6-user.git
 	arch = any
 	license = 0BSD
@@ -9,7 +9,7 @@ pkgbase = turnstile-backend-s6
 	depends = s6-user
 	source = backend-s6
 	source = LICENSE
-	sha256sums = d0ce628ea22bcc4104198c0df7b22738fc4a6edefeca2be508fd34c12852d141
+	sha256sums = 67eacccaa417f13dd2d6ec9113c65d354ea9391b82f4671b36435a71d2ed5434
 	sha256sums = e43689ed5dbd460be77c4f8ecc14a1285671194f11f711520a7be8d8d6d847f7
 
 pkgname = turnstile-backend-s6

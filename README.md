@@ -16,6 +16,7 @@ elogind + turnstiled + login PAM
 
 ## Packages
 
+- **turnstile** — pinned project fork with close-on-exec login tracking and an elogind runtime-directory lease.
 - **s6-user** — thin XDG-aware policy wrapper for per-user s6-frontend commands.
 - **turnstile-s6** — system s6-rc source at `/etc/s6/sv/turnstiled`.
 - **turnstile-backend-s6** — `/usr/lib/turnstile/s6` backend.
@@ -28,7 +29,7 @@ Package definitions are global under `/usr/share/s6-rc/user/sources`; service po
 
 ## Build and install from Git
 
-On Artix with the normal build tools installed:
+On Artix with `base-devel`, `git`, `meson`, and `scdoc` installed:
 
 ```sh
 git clone https://github.com/username13121/s6-user.git
@@ -36,7 +37,7 @@ cd s6-user
 ./build.sh && sudo pacman -U ./packages/*.pkg.tar.zst
 ```
 
-`build.sh` uses `makepkg` and intentionally skips build-time dependency checks because these packages only install data/scripts. `pacman` still enforces every dependency from the package metadata during installation.
+`build.sh` uses `makepkg` and intentionally skips dependency resolution during the local build, so install the prerequisites above first. `pacman` still enforces every runtime dependency from the package metadata during installation.
 
 Then:
 
@@ -75,6 +76,6 @@ Use `s6-user` for all user-tree operations so they cannot accidentally target th
 
 ## Scope
 
-This project does **not** replace Turnstile, overwrite Turnstile policy, remove elogind, create `/run/user/$UID`, or delete Artix PipeWire package files. The administrator explicitly chooses the backend and migration policy.
+This project carries a narrowly patched Turnstile fork but does not replace elogind, create `/run/user/$UID`, or delete Artix PipeWire package files. elogind remains the runtime-directory and login/session authority; the administrator explicitly chooses the backend and migration policy.
 
 License: [0BSD](LICENSE).

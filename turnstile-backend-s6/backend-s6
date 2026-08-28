@@ -7,7 +7,7 @@ case ${1-} in
         ;;
 
     ready)
-        [ "${2-}" = booted ] || {
+        [ "${2-}" = svscan-ready ] || {
             echo "s6: invalid readiness token '${2-}'" >&2
             exit 69
         }
@@ -151,19 +151,28 @@ SVREADY="$STATE/svscan-ready"
 rm -f "$SVREADY"
 mkfifo "$SVREADY"
 
-# Only declare Turnstile readiness after shallow svscan readiness and a
-# successful dependency-aware s6-rc boot.
+# PAM login readiness means that the service manager can accept work, not
+# that every service in the boot transaction has finished starting. Release
+# the login after s6-svscan enters its event loop, then boot s6-rc in parallel
+# with the new session.
 exec 4>"$TURNSTILE_READY"
 (
-    if IFS= read -r _ <"$SVREADY"; then
-        if /usr/bin/s6-user system boot; then
-            printf 'booted\0' >&4
-        fi
+    if ! IFS= read -r _ <"$SVREADY"; then
+        echo "s6: s6-svscan readiness fifo closed without notification" >&2
+        exec 4>&-
+        exit 70
     fi
+
+    printf 'svscan-ready\0' >&4
     exec 4>&-
+
+    if ! /usr/bin/s6-user system boot; then
+        echo "s6: user service boot failed after manager readiness" >&2
+        exit 1
+    fi
 ) &
 
-# The helper alone keeps Turnstile's fifo open while s6-rc boots.
+# The helper owns the readiness descriptor until it releases the PAM login.
 exec 4>&-
 
 # Turnstile must track the service manager itself, not an intermediate shell.

@@ -6,9 +6,11 @@ Run lifecycle tests on a non-production machine. Keep a root console available w
 
 - [ ] All packages build with `./build.sh`.
 - [ ] `pacman -Qlp packages/*.pkg.tar.zst` shows:
+  - `/usr/bin/turnstiled` and `/usr/lib/security/pam_turnstile.so`;
+  - `/etc/pam.d/turnstiled` with required `pam_elogind.so class=background type=unspecified`;
   - `/usr/bin/s6-user`;
   - `/usr/lib/turnstile/s6`;
-  - `/etc/s6/sv/turnstiled/{type,run}` (not `/etc/s6/adminsv`);
+  - `/etc/s6/sv/turnstiled/{type,run,dependencies.d/elogind}` (not `/etc/s6/adminsv`);
   - audio services only under `/usr/share/s6-rc/user/sources`.
 - [ ] `s6-user version export` reports the configured user `scandir`, `livedir`, `repodir`, `stmpdir`, and `storelist` paths, `verbosity=1`, and an empty `fdhuser`. (s6-frontend 0.1.0.0 misdisplays `bootdb`.)
 - [ ] Running `s6-user` creates no frontend configuration file and does not require `S6_CONF`.
@@ -22,6 +24,9 @@ Start with no repository for a disposable test user (or a newly created user).
 - [ ] Log in once through SDDM, TTY, or SSH.
 - [ ] `/run/user/$UID` exists.
 - [ ] Exactly one user-owned `s6-svscan` starts.
+- [ ] `loginctl` shows the manager wrapper in a `Service=turnstiled`, `Class=background` session.
+- [ ] That session exports a nonempty `XDG_SESSION_ID` and the expected absolute runtime path.
+- [ ] PAM releases the login after shallow `s6-svscan` readiness; an intentionally slow boot service continues starting after the shell or desktop appears.
 - [ ] `$XDG_STATE_HOME/s6-rc/repository` is initialized automatically.
 - [ ] `$XDG_CONFIG_HOME/s6-rc/compiled/current` exists.
 - [ ] `s6-user live status` shows `pipewire`, `wireplumber`, and `pipewire-pulse` up when all three packages are installed and recommended.
@@ -44,7 +49,9 @@ pgrep -u "$USER" -x pipewire
 - [ ] The user manager and audio services remain while the other session is active.
 - [ ] Log out of the last session.
 - [ ] s6-rc stops user services dependency-aware and `s6-svscan` exits.
-- [ ] `/run/user/$UID` eventually disappears through elogind cleanup.
+- [ ] Turnstile removes its session file and closes the internal elogind background session.
+- [ ] `/run/user/$UID` remains present until the manager wrapper exits, then eventually disappears through elogind cleanup.
+- [ ] No desktop descendant retains an established connection to `/run/turnstiled/control.sock` after logout.
 
 ## Supervision
 
@@ -65,6 +72,20 @@ kill -KILL "$(pgrep -n -u "$USER" -x s6-svscan)"
 - [ ] Turnstile starts a replacement `s6-svscan` while the login remains.
 - [ ] The user service graph becomes operational again.
 - [ ] No second persistent manager or duplicate PipeWire remains.
+
+## Administrative termination
+
+From a separate root console while the disposable user is logged in:
+
+```sh
+loginctl terminate-user "$test_user"
+```
+
+- [ ] elogind sends catchable termination to all user sessions, including the Turnstile background session.
+- [ ] The Turnstile wrapper invokes the backend stop path and eventually exits.
+- [ ] `$XDG_RUNTIME_DIR` remains present while the background-session leader is alive.
+- [ ] The user manager and services disappear, followed by the runtime directory.
+- [ ] No test expects dependency-ordered shutdown after an explicit cgroup-wide `SIGTERM`, and no test treats `SIGKILL` as graceful.
 
 ## Dependency graph
 

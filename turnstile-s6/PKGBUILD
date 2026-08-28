@@ -1,23 +1,27 @@
 pkgname=turnstile-s6
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 pkgdesc='s6-rc system service definition for Turnstile'
 arch=('any')
 url='https://github.com/username13121/s6-user.git'
 license=('0BSD')
 groups=('s6-world')
-depends=('turnstile' 's6-base')
+depends=('turnstile' 's6-base' 'elogind')
 provides=('init-turnstile')
 conflicts=('init-turnstile')
 source=('turnstiled-type'
         'turnstiled-run'
+        'turnstiled-dependency-elogind'
         'LICENSE')
 sha256sums=('d0001a150b83f68f09004c5059045cb76a3f064eed4d42ce072bc3722c118006'
             'f1d5cc4ffe9c8c00b91c7a1dce4c8691448b471468dcd62ecd96a5976daa855a'
+            'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
             'e43689ed5dbd460be77c4f8ecc14a1285671194f11f711520a7be8d8d6d847f7')
 
 package() {
     install -Dm644 turnstiled-type "$pkgdir/etc/s6/sv/turnstiled/type"
     install -Dm755 turnstiled-run "$pkgdir/etc/s6/sv/turnstiled/run"
+    install -Dm644 turnstiled-dependency-elogind \
+        "$pkgdir/etc/s6/sv/turnstiled/dependencies.d/elogind"
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

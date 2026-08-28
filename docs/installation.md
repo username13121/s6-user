@@ -13,11 +13,9 @@ Do not install `turnstile-dinit` on an s6 system. `turnstile-s6` provides/confli
 ## Build and install from Git
 
 ```sh
-git clone https://github.com/<you>/<repo>
-cd <repo>
-
-./build.sh
-sudo pacman -U ./packages/*.pkg.tar.zst
+git clone https://github.com/username13121/s6-user.git
+cd s6-user
+./build.sh && sudo pacman -U ./packages/*.pkg.tar.zst
 ```
 
 The transaction installs all six package names (the PipeWire pkgbase emits two packages):
@@ -31,17 +29,7 @@ pipewire-pulse-s6
 wireplumber-s6
 ```
 
-With these packages in a configured custom repository, the equivalent is:
-
-```sh
-sudo pacman -S \
-    s6-user \
-    turnstile-s6 \
-    turnstile-backend-s6 \
-    pipewire-s6 \
-    pipewire-pulse-s6 \
-    wireplumber-s6
-```
+The three audio service packages are usable reference definitions. They demonstrate readiness and dependency handling, but the general per-user s6 infrastructure is the project's primary purpose.
 
 ## Select the Turnstile backend
 
@@ -194,49 +182,6 @@ s6-user set commit -f
 The backend will install and boot that compiled set on the next clean login. The obsolete `$XDG_CONFIG_HOME/s6/user.conf` is no longer read and may be removed after verifying the migration. Machine overrides under `/etc/s6/user-sv` must be moved manually to `/etc/s6-rc/user/sources` by the administrator.
 
 If preserving existing enable/disable prescriptions is unnecessary, omit the repository move; the backend creates a fresh repository using the recommended flags from the new stores.
-
-## Build a custom pacman repository
-
-Build packages and create a repository database:
-
-```sh
-./build.sh
-./repo-add.sh                 # defaults to artix-s6-user
-# or: ./repo-add.sh myrepo
-```
-
-Serve the `packages/` directory from a web server. On clients, add a matching section to `/etc/pacman.conf`, for example:
-
-```ini
-[artix-s6-user]
-SigLevel = Optional TrustAll
-Server = https://packages.example.invalid/artix-s6-user
-```
-
-Then:
-
-```sh
-sudo pacman -Syu
-sudo pacman -S s6-user turnstile-s6 turnstile-backend-s6 \
-    pipewire-s6 pipewire-pulse-s6 wireplumber-s6
-```
-
-`Optional TrustAll` is suitable only for initial controlled testing. For a real repository, sign packages and the database with a trusted key:
-
-```sh
-SIGN_PACKAGES=1 GPGKEY=<key-id> ./build.sh
-SIGN_REPO=1 GPGKEY=<key-id> ./repo-add.sh
-```
-
-Distribute/import/sign the public key and use a strict `SigLevel` according to pacman repository policy. `repo-add` creates ordinary pacman database files; installation logic does not depend on this custom repository.
-
-Each package directory also contains a standalone `PKGBUILD` and `.SRCINFO`. The `pipewire-s6` directory is intentionally a split pkgbase. Before publishing under a final GitHub/AUR location, update each PKGBUILD's `url` to that canonical repository URL and regenerate `.SRCINFO`:
-
-```sh
-(cd s6-user && makepkg --printsrcinfo > .SRCINFO)
-```
-
-Repeat for each pkgbase.
 
 ## Rollback
 

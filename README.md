@@ -1,6 +1,6 @@
 # Artix per-user s6 services
 
-Packages for running one `s6-svscan`/s6-rc service manager per logged-in user, with Turnstile handling first-login/last-logout lifecycle and elogind retaining normal login/session/seat and runtime-directory ownership.
+This project's goal is to make per-user services straightforward to package, enable, and operate with s6. It provides one `s6-svscan`/s6-rc service manager per logged-in user, with Turnstile handling first-login/last-logout lifecycle and elogind retaining normal login/session/seat and runtime-directory ownership.
 
 ```text
 elogind + turnstiled + login PAM
@@ -19,8 +19,10 @@ elogind + turnstiled + login PAM
 - **s6-user** — thin XDG-aware policy wrapper for per-user s6-frontend commands.
 - **turnstile-s6** — system s6-rc source at `/etc/s6/sv/turnstiled`.
 - **turnstile-backend-s6** — `/usr/lib/turnstile/s6` backend.
-- **pipewire-s6** / **pipewire-pulse-s6** — split package with ready-notifying user services.
-- **wireplumber-s6** — WirePlumber user service.
+- **pipewire-s6** / **pipewire-pulse-s6** — usable, ready-notifying reference services.
+- **wireplumber-s6** — usable WirePlumber reference service.
+
+The PipeWire services demonstrate how real per-user dependencies, readiness checks, and recommended services fit this architecture. They are usable, but primarily serve as reference definitions rather than being the project's main purpose.
 
 Package definitions are global under `/usr/share/s6-rc/user/sources`; service policy and compiled sets are private to each user under `$XDG_STATE_HOME` and `$XDG_CONFIG_HOME`.
 
@@ -29,11 +31,9 @@ Package definitions are global under `/usr/share/s6-rc/user/sources`; service po
 On Artix with the normal build tools installed:
 
 ```sh
-git clone https://github.com/<you>/<repo>
-cd <repo>
-
-./build.sh
-sudo pacman -U ./packages/*.pkg.tar.zst
+git clone https://github.com/username13121/s6-user.git
+cd s6-user
+./build.sh && sudo pacman -U ./packages/*.pkg.tar.zst
 ```
 
 `build.sh` uses `makepkg` and intentionally skips build-time dependency checks because these packages only install data/scripts. `pacman` still enforces every dependency from the package metadata during installation.
@@ -70,7 +70,7 @@ Use `s6-user` for all user-tree operations so they cannot accidentally target th
 ## Documentation
 
 - [Architecture and filesystem policy](docs/architecture.md)
-- [Installation, migration, and custom pacman repository](docs/installation.md)
+- [Installation and migration](docs/installation.md)
 - [Lifecycle and behavior test checklist](docs/testing.md)
 
 ## Scope

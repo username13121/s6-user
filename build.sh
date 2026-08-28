@@ -12,6 +12,9 @@ if [[ $EUID -eq 0 ]]; then
     exit 1
 fi
 
+# packages/ is generated output. Recreate it so the pacman wildcard below can
+# never select stale releases from an earlier build.
+rm -rf "$output"
 mkdir -p "$output" "$builddir" "$sourcedir"
 
 makepkg_args=(--cleanbuild --clean --force --nodeps)
@@ -41,3 +44,4 @@ do
 done
 
 echo "==> Packages are in $output"
+echo "==> Install with: sudo pacman -U $output/*.pkg.tar.zst"
